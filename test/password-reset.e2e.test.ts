@@ -8,10 +8,6 @@ let server: Server;
 let base: string;
 let disconnectDb: () => Promise<void>;
 
-function readJson(res: Response): Promise<any> {
-  return res.json();
-}
-
 const email = "reset-me@example.com";
 const originalPassword = "correct-horse-1";
 

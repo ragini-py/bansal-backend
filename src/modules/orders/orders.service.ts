@@ -150,9 +150,9 @@ export async function requestReturn(
   return toPublicOrder(doc);
 }
 
-export async function trackOrder(id: string, email?: string): Promise<PublicOrder> {
+export async function trackOrder(id: string, email: string): Promise<PublicOrder> {
   const doc = await Order.findById(id).catch(() => null);
-  if (!doc || (email && doc.email !== email.toLowerCase())) {
+  if (!doc || doc.email !== email.trim().toLowerCase()) {
     throw new NotFoundError("We couldn't find an order matching those details.");
   }
   return toPublicOrder(doc);

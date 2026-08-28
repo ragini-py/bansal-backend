@@ -256,8 +256,13 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 404);
   });
 
+  it("400s tracking without an email — id alone must never be enough", async () => {
+    const res = await fetch(`${base}/api/orders/track?id=${createdOrderId}`);
+    assert.equal(res.status, 400);
+  });
+
   it("404s tracking an id that doesn't exist", async () => {
-    const res = await fetch(`${base}/api/orders/track?id=000000000000000000000000`);
+    const res = await fetch(`${base}/api/orders/track?id=000000000000000000000000&email=orders-customer@example.com`);
     assert.equal(res.status, 404);
   });
 });

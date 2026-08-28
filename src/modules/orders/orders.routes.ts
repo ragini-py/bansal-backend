@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
+import { limiter } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
+import { env } from "../../config/env.js";
 import * as ordersController from "./orders.controller.js";
 import { createOrderSchema, requestReturnSchema, updateOrderSchema } from "./orders.schemas.js";
 
@@ -13,8 +15,13 @@ import { createOrderSchema, requestReturnSchema, updateOrderSchema } from "./ord
 export const ordersRouter = Router();
 
 // Public guest lookup — matches TrackPage.tsx, which is reachable without
-// signing in ("track your order" by id + optional email).
-ordersRouter.get("/track", ordersController.track);
+// signing in ("track your order" by id + email, both required — see
+// orders.controller.ts). Rate-limited since it's unauthenticated.
+ordersRouter.get(
+  "/track",
+  limiter(env.rateLimit.trackOrderMax, 15 * 60 * 1000, "Too many tracking attempts. Please try again in 15 minutes."),
+  ordersController.track,
+);
 
 ordersRouter.use(authenticate);
 ordersRouter.post("/", validate(createOrderSchema), ordersController.create);

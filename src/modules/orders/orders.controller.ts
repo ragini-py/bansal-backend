@@ -34,8 +34,16 @@ export async function requestReturn(req: Request<{ id: string }>, res: Response)
 export async function track(req: Request, res: Response): Promise<void> {
   const id = req.query.id as string | undefined;
   const email = req.query.email as string | undefined;
-  if (!id) {
-    res.status(400).json({ success: false, code: "BAD_REQUEST", message: "Order id is required." });
+  // Both are required — an order id alone (a Mongo ObjectId, which embeds a
+  // predictable timestamp rather than being fully random) must not be
+  // enough on its own to pull someone else's name/phone/address/order
+  // contents with no verification at all.
+  if (!id || !email) {
+    res.status(400).json({
+      success: false,
+      code: "BAD_REQUEST",
+      message: "Order id and email are both required.",
+    });
     return;
   }
   const order = await ordersService.trackOrder(id, email);

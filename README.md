@@ -85,7 +85,7 @@ Orders:
 | `GET /api/orders` | admin | every order, across every customer |
 | `PATCH /api/orders/:id` | admin | generic partial update — matches the frontend's `updateOrder(id, patch)` exactly (status changes, shipment dispatch, return approval) |
 | `POST /api/orders/:id/return` | access token | must be the order's own owner |
-| `GET /api/orders/track?id=&email=` | — | public guest lookup, matches TrackPage; `email` narrows the match if given |
+| `GET /api/orders/track?id=&email=` | — | public guest lookup, matches TrackPage; **both `id` and `email` are required** — rate-limited (20/15min) since an order id alone (a Mongo ObjectId, not fully random) must never be enough on its own to pull someone else's name/phone/address |
 
 Coupons:
 
