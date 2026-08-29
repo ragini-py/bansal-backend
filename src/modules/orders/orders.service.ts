@@ -3,6 +3,7 @@ import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
 import { Product } from "../catalog/models/index.js";
 import { Coupon, type CouponDoc } from "../coupons/models/coupon.model.js";
+import { getPricingSettings } from "../settings/settings.service.js";
 import { Order, type OrderDoc } from "./models/order.model.js";
 import type {
   CreateOrderInput,
@@ -197,7 +198,23 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
     discount = priced.discount;
   }
 
-  const total = Math.max(subtotal - discount, 0) + input.shippingFee + input.tax;
+  // Shipping/COD fee and eligibility re-derived from the live store
+  // settings — matches store.tsx's totals() logic exactly, just server-side
+  // so a tampered request can't get free shipping or bypass the COD cap.
+  const settings = await getPricingSettings();
+  const afterDiscount = Math.max(subtotal - discount, 0);
+  const shippingFee =
+    afterDiscount === 0 || afterDiscount >= settings.freeShippingThreshold ? 0 : settings.shippingFee;
+
+  if (input.payment.method === "cod") {
+    if (!settings.codEnabled) throw new ConflictError("Cash on Delivery isn't available right now.");
+    if (afterDiscount + shippingFee > settings.codMaxOrderValue) {
+      throw new ConflictError("Cash on Delivery isn't available for orders this large.");
+    }
+  }
+  const codFee = input.payment.method === "cod" ? settings.codFee : 0;
+  const tax = 0; // GST is included in listed prices — same as store.tsx's totals().
+  const total = afterDiscount + shippingFee + codFee + tax;
 
   const doc = await Order.create({
     ...input,
@@ -206,6 +223,8 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
     subtotal,
     discount,
     couponCode,
+    shippingFee: shippingFee + codFee,
+    tax,
     total,
     payment: { ...input.payment, amount: total },
   });

@@ -214,7 +214,10 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 201);
     assert.equal(body.order.lines[0].price, 10000);
     assert.equal(body.order.subtotal, 20000);
-    assert.equal(body.order.total, 20000);
+    // 20000 is below the default free-shipping threshold (25000), and the
+    // default payment method here is cod — total also re-derives shipping
+    // (350) + cod fee (99) from live Settings, see orders.service.ts.
+    assert.equal(body.order.total, 20449);
   });
 
   it("404s creating an order for a product that doesn't exist", async () => {
@@ -460,7 +463,10 @@ describe("coupon enforcement at order creation (against a real MongoDB instance)
     const body = await readJson(res);
     assert.equal(res.status, 201);
     assert.equal(body.order.discount, 1000); // 10% of 10000
-    assert.equal(body.order.total, 9000);
+    // 9000 (after discount) is below the free-shipping threshold, and the
+    // default payment method is cod — total includes shipping (350) + cod
+    // fee (99) from live Settings, same as the price-tampering test above.
+    assert.equal(body.order.total, 9449);
 
     const { Coupon } = await import("../src/modules/coupons/models/coupon.model.js");
     const updated = await Coupon.findById(coupon._id);
@@ -533,6 +539,104 @@ describe("coupon enforcement at order creation (against a real MongoDB instance)
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
       body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(res.status, 409);
+  });
+});
+
+describe("shipping/COD pricing from live Settings (against a real MongoDB instance)", () => {
+  let shippingCustomerToken: string;
+  let shippingCustomerEmail: string;
+
+  before(async () => {
+    shippingCustomerEmail = `shipping-cust-${Date.now()}@example.com`;
+    await fetch(`${base}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: "Ship",
+        lastName: "Cust",
+        email: shippingCustomerEmail,
+        phone: "9876543210",
+        password: "correct-horse-1",
+      }),
+    });
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: shippingCustomerEmail, password: "correct-horse-1" }),
+    });
+    shippingCustomerToken = (await readJson(loginRes)).accessToken;
+  });
+
+  it("charges the configured shipping fee below the free-shipping threshold, waives it above", async () => {
+    const { Settings } = await import("../src/modules/settings/models/settings.model.js");
+    await Settings.findOneAndUpdate(
+      {},
+      { $set: { freeShippingThreshold: 25000, shippingFee: 350, codFee: 99, codEnabled: true, codMaxOrderValue: 50000 } },
+      { upsert: true },
+    );
+
+    const belowRes = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${shippingCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: shippingCustomerEmail })), // subtotal 10000, cod
+    });
+    const belowBody = await readJson(belowRes);
+    assert.equal(belowRes.status, 201);
+    assert.equal(belowBody.order.shippingFee, 350 + 99);
+    assert.equal(belowBody.order.total, 10000 + 350 + 99);
+
+    const aboveRes = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${shippingCustomerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          email: shippingCustomerEmail,
+          lines: [
+            {
+              productId: seededProductId,
+              name: "Test Saree",
+              image: "/products/test.jpg",
+              slug: "test-saree",
+              size: "Free Size",
+              colour: "Gold",
+              quantity: 3, // 3 x 10000 = 30000, above the 25000 threshold
+              price: 10000,
+              mrp: 12000,
+            },
+          ],
+        }),
+      ),
+    });
+    const aboveBody = await readJson(aboveRes);
+    assert.equal(aboveRes.status, 201);
+    assert.equal(aboveBody.order.shippingFee, 99); // free shipping, cod fee still applies
+    assert.equal(aboveBody.order.total, 30000 + 99);
+  });
+
+  it("rejects COD when it's disabled in Settings", async () => {
+    const { Settings } = await import("../src/modules/settings/models/settings.model.js");
+    await Settings.findOneAndUpdate({}, { $set: { codEnabled: false } }, { upsert: true });
+
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${shippingCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: shippingCustomerEmail })),
+    });
+    assert.equal(res.status, 409);
+
+    await Settings.findOneAndUpdate({}, { $set: { codEnabled: true } }, { upsert: true });
+  });
+
+  it("rejects COD above the configured maximum order value", async () => {
+    const { Settings } = await import("../src/modules/settings/models/settings.model.js");
+    await Settings.findOneAndUpdate({}, { $set: { codMaxOrderValue: 5000 } }, { upsert: true });
+
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${shippingCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: shippingCustomerEmail })), // subtotal 10000 > 5000
     });
     assert.equal(res.status, 409);
   });

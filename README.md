@@ -39,10 +39,11 @@ needs to point at something real to actually boot.
 - `src/modules/cart/` — one `Cart` document per user, full-replace GET/PUT (see below)
 - `src/modules/uploads/` — admin image upload, Cloudinary or local-disk fallback (see below)
 - `src/utils/email.ts` — transactional email, real SMTP or console-log fallback (see below)
+- `src/modules/settings/` — one singleton `Settings` document for the whole store, public GET, admin-editable PATCH for shipping/COD fields (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
 - `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
-- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
+- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 
 ## Access token vs refresh token
@@ -103,7 +104,8 @@ Orders:
 - Every line's `price`/`mrp` is re-read from the live `Product` document by id (404s if the product no longer exists) — a request can't buy at an arbitrary price by editing the request body.
 - `subtotal` is recomputed as the sum of re-priced lines.
 - If a `couponCode` is present, it's re-validated from scratch against the live `Coupon` document: `active`, within `startsAt`/`expiresAt`, `subtotal >= minOrder`, `usageLimit` not exceeded, `perUserLimit` not exceeded for this caller (counted via existing `Order` documents), `newCustomerOnly` (caller must have zero prior orders), and `restrictedCollections` (at least one line's product must belong to one of the listed collections) — any failure is a 409, not a silent full-price fallback. `discount` is computed from the coupon's real `type`/`value`/`maxDiscount`, and the coupon's `timesUsed` is incremented once the order is created.
-- `total` is `max(subtotal - discount, 0) + shippingFee + tax`, and `payment.amount` is set to match — `shippingFee`/`tax` are still taken from the client as-is, since `StoreSettings` (free-shipping threshold, shipping fee) isn't backend-owned yet (see below).
+- `shippingFee` is re-derived from the live `Settings` document too: waived once `subtotal - discount` meets `freeShippingThreshold`, otherwise `shippingFee` + (`codFee` if the payment method is `cod`). A `cod` order is rejected outright (409) if `codEnabled` is off, or if the order total exceeds `codMaxOrderValue` — closing the same class of gap as pricing/coupons, since a tampered request could otherwise get free shipping or dodge the COD cap. `tax` is fixed at 0 (GST is included in listed prices, same as the frontend's own `totals()`).
+- `total` is `max(subtotal - discount, 0) + shippingFee + tax`, and `payment.amount` is set to match.
 
 Coupons:
 
@@ -165,12 +167,26 @@ dev with zero setup. Filling in `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` switches
 to real delivery through any SMTP provider (Postmark, SES, Mailgun, Gmail,
 Mailtrap, ...) automatically, no code changes.
 
+Settings:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /api/settings` | — | public — Footer/ContactPage/ShippingPage/TermsPage etc. all read brand name, support contact, and shipping policy without signing in. Creates the (singleton) settings document with schema defaults on first call if none exists yet |
+| `PATCH /api/settings` | admin | `{freeShippingThreshold?, shippingFee?, codMaxOrderValue?}` — the only fields AdminPage's SettingsManagerTab actually edits; other keys in the body are silently ignored, not rejected |
+
+One document for the whole store (no per-user/tenant concept here). This is
+what `createOrder`'s shipping/COD pricing reads from — an admin changing the
+free-shipping threshold or shipping fee here takes effect on the very next
+order. `emailProviderConnected` in the response is never stored — it's a
+live `env.smtp !== null` check, so it always reflects whether SMTP is
+actually configured, not a flag someone could forget to flip.
+
 ## Scope of this pass — what's deliberately not here yet
 
 Built incrementally, one module at a time — everything below is a deliberate
 gap, not an oversight:
 
-- **Shipping fee / tax are still client-supplied** — `StoreSettings` (free-shipping threshold, shipping fee amount) isn't a backend-owned model yet, so there's nothing authoritative to recompute those two fields against. Only the product-price and coupon-discount portions of the total are server-verified.
+- **Most of `Settings` is read-only via the API** — `brandName`, `tagline`, `supportEmail`/`supportPhone`, `codEnabled`, `razorpayEnabled`/`razorpayConnected`, `delhiveryConnected`, `allowGuestBrowsing` all exist on the model (and are served by `GET /api/settings`) but have no admin UI to edit them yet, so there's no write path for them — same "don't build endpoints nothing calls" rule as everywhere else in this backend. `razorpayConnected`/`delhiveryConnected` are honestly `false` (no real integration exists for either).
 
 ## Testing
 
