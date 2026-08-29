@@ -1,3 +1,4 @@
+import path from "node:path";
 import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
@@ -11,6 +12,7 @@ import { catalogRouter } from "./modules/catalog/catalog.routes.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
 import { couponsRouter } from "./modules/coupons/coupons.routes.js";
 import { cartRouter } from "./modules/cart/cart.routes.js";
+import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
 import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
@@ -31,12 +33,26 @@ export function createApp(): Express {
     res.json({ status: "ok", uptime: process.uptime() });
   });
 
+  // Local-disk upload fallback (see modules/uploads/uploads.service.ts) —
+  // served cross-origin since the frontend runs on a different port.
+  // Helmet's default same-origin resource policy would otherwise block the
+  // frontend from loading these images.
+  app.use(
+    "/uploads",
+    (_req, res, next) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      next();
+    },
+    express.static(path.join(process.cwd(), "uploads")),
+  );
+
   app.use("/api/auth", authRouter);
   app.use("/api/users", usersRouter);
   app.use("/api", catalogRouter);
   app.use("/api/orders", ordersRouter);
   app.use("/api", couponsRouter);
   app.use("/api/cart", cartRouter);
+  app.use("/api/uploads", uploadsRouter);
   app.use("/api", exampleRouter);
 
   app.use(notFoundHandler);

@@ -10,6 +10,12 @@ export class AppError extends Error {
   }
 }
 
+export class BadRequestError extends AppError {
+  constructor(message = "That request isn't valid.") {
+    super(400, "BAD_REQUEST", message);
+  }
+}
+
 export class UnauthorizedError extends AppError {
   constructor(message = "You must be signed in to do that.") {
     super(401, "UNAUTHORIZED", message);

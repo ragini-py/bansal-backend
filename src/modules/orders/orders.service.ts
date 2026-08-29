@@ -1,4 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../../common/app-error.js";
+import { env } from "../../config/env.js";
+import { sendEmail } from "../../utils/email.js";
 import { Product } from "../catalog/models/index.js";
 import { Coupon, type CouponDoc } from "../coupons/models/coupon.model.js";
 import { Order, type OrderDoc } from "./models/order.model.js";
@@ -211,6 +213,17 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
   if (couponCode) {
     await Coupon.updateOne({ code: couponCode }, { $inc: { timesUsed: 1 } });
   }
+
+  // Best-effort — a broken email provider must never fail an already-placed
+  // order. sendEmail itself logs to the console until SMTP_* is configured.
+  const orderNumber = doc._id.toString();
+  const itemLines = lines.map((l) => `  ${l.quantity} x ${l.name} (${l.size}, ${l.colour})`).join("\n");
+  sendEmail({
+    to: doc.email,
+    subject: `Your Bansal-nx order ${orderNumber} is confirmed`,
+    text: `Hi ${doc.customerName},\n\nThanks for your order! Here's a summary:\n\n${itemLines}\n\nSubtotal: Rs. ${subtotal.toLocaleString("en-IN")}\nDiscount: Rs. ${discount.toLocaleString("en-IN")}\nTotal: Rs. ${total.toLocaleString("en-IN")}\n\nTrack your order: ${env.corsOrigin}/track?id=${orderNumber}&email=${encodeURIComponent(doc.email)}`,
+    html: `<p>Hi ${doc.customerName},</p><p>Thanks for your order! Here's a summary:</p><pre>${itemLines}</pre><p>Subtotal: &#8377;${subtotal.toLocaleString("en-IN")}<br/>Discount: &#8377;${discount.toLocaleString("en-IN")}<br/>Total: &#8377;${total.toLocaleString("en-IN")}</p><p><a href="${env.corsOrigin}/track?id=${orderNumber}&email=${encodeURIComponent(doc.email)}">Track your order</a></p>`,
+  }).catch((err: unknown) => console.error("Failed to send order confirmation email:", err));
 
   return toPublicOrder(doc);
 }

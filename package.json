@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
     "compression": "^1.8.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -25,6 +26,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.10.0",
     "morgan": "^1.10.1",
+    "multer": "^2.3.0",
+    "nodemailer": "^9.0.6",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -35,7 +38,9 @@
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/morgan": "^1.9.10",
+    "@types/multer": "^2.2.0",
     "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.1",
     "eslint": "^9.18.0",
     "globals": "^17.11.0",
     "mongodb-memory-server": "^11.2.0",

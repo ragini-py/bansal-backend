@@ -1,5 +1,6 @@
 import { ConflictError, ForbiddenError, UnauthorizedError } from "../../common/app-error.js";
 import { env } from "../../config/env.js";
+import { sendEmail } from "../../utils/email.js";
 import { comparePassword, hashPassword } from "../../utils/password.js";
 import { generateOpaqueToken, hashToken } from "../../utils/random-token.js";
 import { signAccessToken, type AccessTokenPayload } from "../../utils/jwt.js";
@@ -168,11 +169,17 @@ export async function requestPasswordReset(input: ForgotPasswordInput): Promise<
     expiresAt: new Date(Date.now() + env.passwordResetTtlMs),
   });
 
-  // No email provider is wired up yet (see backend/README.md) — logging the
-  // link is the dev-visible stand-in, same spirit as the frontend's own
-  // "no email is actually sent in this preview" notice.
+  // sendEmail logs to the console instead of sending for real until SMTP_*
+  // is configured (see .env.example) — same behavior as before, just moved
+  // behind the shared email utility so it upgrades to real delivery for
+  // free once that's filled in.
   const resetLink = `${env.corsOrigin}/reset-password?token=${token}`;
-  console.log(`[password reset] ${user.email} -> ${resetLink}`);
+  await sendEmail({
+    to: user.email,
+    subject: "Reset your Bansal-nx password",
+    text: `Hi ${user.firstName},\n\nReset your password using the link below. It expires in ${Math.round(env.passwordResetTtlMs / 60000)} minutes.\n\n${resetLink}\n\nIf you didn't request this, you can safely ignore this email.`,
+    html: `<p>Hi ${user.firstName},</p><p>Reset your password using the link below. It expires in ${Math.round(env.passwordResetTtlMs / 60000)} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+  });
 }
 
 export async function resetPassword(input: ResetPasswordInput): Promise<void> {

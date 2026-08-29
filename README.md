@@ -37,10 +37,12 @@ needs to point at something real to actually boot.
 - `src/scripts/seed-catalog.ts` — migrates the frontend's mock catalog into MongoDB, upserted by slug (`npm run seed`)
 - `src/modules/orders/` — `Order` model (embedded lines/address/payment/shipment/returnRequest snapshot, matching the frontend's `Order` type exactly) + create/list/update/return/track endpoints (see below)
 - `src/modules/cart/` — one `Cart` document per user, full-replace GET/PUT (see below)
+- `src/modules/uploads/` — admin image upload, Cloudinary or local-disk fallback (see below)
+- `src/utils/email.ts` — transactional email, real SMTP or console-log fallback (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
 - `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
-- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
+- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 
 ## Access token vs refresh token
@@ -142,14 +144,33 @@ its local cart into whatever's saved server-side (summing quantities for
 matching variants) and pushes every change after that, so a cart survives
 across devices and sessions instead of living only in one browser.
 
+Image uploads:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `POST /api/uploads` | admin | multipart, field name `image`, 5MB limit, images only. Returns `{ url }` |
+
+No credentials configured yet (see `.env.example`'s `CLOUDINARY_*`) — files
+are written to `backend/uploads/` and served at `{APP_URL}/uploads/<file>`
+instead, so admin product/collection image upload works fully today with
+zero setup. Filling in all three `CLOUDINARY_*` values switches to
+Cloudinary automatically, no code changes — see `modules/uploads/uploads.service.ts`.
+
+Transactional email:
+
+No credentials configured yet (see `.env.example`'s `SMTP_*`) — `sendEmail`
+(`src/utils/email.ts`) logs the email to the console instead of sending it,
+so the password-reset and order-confirmation flows are fully testable in
+dev with zero setup. Filling in `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` switches
+to real delivery through any SMTP provider (Postmark, SES, Mailgun, Gmail,
+Mailtrap, ...) automatically, no code changes.
+
 ## Scope of this pass — what's deliberately not here yet
 
 Built incrementally, one module at a time — everything below is a deliberate
 gap, not an oversight:
 
-- **Real image uploads** — product/collection images are entered as plain URL strings in the admin forms (newline/URL-per-field), not an uploaded-asset pipeline. The seeded catalog's images are static files under the frontend's `public/products/` and `public/collections/` folders for this reason. A real "upload a photo" flow is separate future work.
 - **Shipping fee / tax are still client-supplied** — `StoreSettings` (free-shipping threshold, shipping fee amount) isn't a backend-owned model yet, so there's nothing authoritative to recompute those two fields against. Only the product-price and coupon-discount portions of the total are server-verified.
-- **Real transactional email** — see "Password reset" above; a real provider (Postmark/SES/etc.) is a separate future integration.
 
 ## Testing
 
