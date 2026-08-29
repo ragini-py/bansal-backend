@@ -27,6 +27,7 @@ ordersRouter.use(authenticate);
 ordersRouter.post("/", validate(createOrderSchema), ordersController.create);
 ordersRouter.get("/mine", ordersController.listMine);
 ordersRouter.post("/:id/return", validate(requestReturnSchema), ordersController.requestReturn);
+ordersRouter.post("/:id/cancel", ordersController.cancel);
 
 ordersRouter.get("/", authorize("admin"), ordersController.listAll);
 ordersRouter.patch("/:id", authorize("admin"), validate(updateOrderSchema), ordersController.update);

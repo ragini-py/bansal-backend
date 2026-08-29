@@ -1,6 +1,6 @@
-import { NotFoundError } from "../../common/app-error.js";
+import { ConflictError, NotFoundError } from "../../common/app-error.js";
 import { Collection, Product, type CollectionDoc, type ProductDoc } from "./models/index.js";
-import type { UpdateProductInput } from "./catalog.schemas.js";
+import type { CollectionInput, CreateProductInput, UpdateProductInput } from "./catalog.schemas.js";
 
 export interface PublicVariant {
   id: string;
@@ -110,12 +110,24 @@ export async function getProductBySlug(slug: string): Promise<PublicProduct> {
   return toPublicProduct(doc);
 }
 
+export async function createProduct(input: CreateProductInput): Promise<PublicProduct> {
+  const existing = await Product.findOne({ slug: input.slug });
+  if (existing) throw new ConflictError("A product with this slug already exists.");
+  const doc = await Product.create(input);
+  return toPublicProduct(doc);
+}
+
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<PublicProduct> {
   const doc = await Product.findById(id);
   if (!doc) throw new NotFoundError("Product not found.");
   doc.set(input);
   await doc.save();
   return toPublicProduct(doc);
+}
+
+export async function deleteProduct(id: string): Promise<void> {
+  const doc = await Product.findByIdAndDelete(id);
+  if (!doc) throw new NotFoundError("Product not found.");
 }
 
 export async function listCollections(): Promise<PublicCollection[]> {
@@ -127,4 +139,24 @@ export async function getCollectionBySlug(slug: string): Promise<PublicCollectio
   const doc = await Collection.findOne({ slug });
   if (!doc) throw new NotFoundError("Collection not found.");
   return toPublicCollection(doc);
+}
+
+export async function createCollection(input: CollectionInput): Promise<PublicCollection> {
+  const existing = await Collection.findOne({ slug: input.slug });
+  if (existing) throw new ConflictError("A collection with this slug already exists.");
+  const doc = await Collection.create(input);
+  return toPublicCollection(doc);
+}
+
+export async function updateCollection(id: string, input: CollectionInput): Promise<PublicCollection> {
+  const doc = await Collection.findById(id);
+  if (!doc) throw new NotFoundError("Collection not found.");
+  doc.set(input);
+  await doc.save();
+  return toPublicCollection(doc);
+}
+
+export async function deleteCollection(id: string): Promise<void> {
+  const doc = await Collection.findByIdAndDelete(id);
+  if (!doc) throw new NotFoundError("Collection not found.");
 }

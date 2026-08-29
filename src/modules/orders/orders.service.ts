@@ -1,6 +1,13 @@
-import { ForbiddenError, NotFoundError } from "../../common/app-error.js";
+import { ConflictError, ForbiddenError, NotFoundError } from "../../common/app-error.js";
+import { Product } from "../catalog/models/index.js";
+import { Coupon, type CouponDoc } from "../coupons/models/coupon.model.js";
 import { Order, type OrderDoc } from "./models/order.model.js";
-import type { CreateOrderInput, RequestReturnInput, UpdateOrderInput } from "./orders.schemas.js";
+import type {
+  CreateOrderInput,
+  CreateOrderLineInput,
+  RequestReturnInput,
+  UpdateOrderInput,
+} from "./orders.schemas.js";
 
 export interface PublicOrder {
   id: string;
@@ -108,8 +115,103 @@ export function toPublicOrder(doc: OrderDoc): PublicOrder {
   };
 }
 
+// Coupon eligibility and discount math re-derived server-side — the
+// frontend's applyCoupon() does the same checks for instant UI feedback,
+// but only this copy is ever trusted for the actual charge.
+async function priceCoupon(
+  code: string,
+  userId: string,
+  subtotal: number,
+  lines: CreateOrderLineInput[],
+): Promise<{ couponCode: string; discount: number }> {
+  const coupon = await Coupon.findOne({ code: code.trim().toUpperCase() });
+  if (!coupon) throw new ConflictError("That coupon code is no longer valid.");
+
+  const now = new Date();
+  if (!coupon.active) throw new ConflictError("That coupon is no longer active.");
+  if (now < coupon.startsAt || now > coupon.expiresAt) {
+    throw new ConflictError("That coupon isn't valid right now.");
+  }
+  if (subtotal < coupon.minOrder) {
+    throw new ConflictError("This order no longer meets that coupon's minimum order value.");
+  }
+  if (coupon.usageLimit != null && coupon.timesUsed >= coupon.usageLimit) {
+    throw new ConflictError("This coupon has reached its usage limit.");
+  }
+  if (coupon.perUserLimit != null) {
+    const usedByUser = await Order.countDocuments({ userId, couponCode: coupon.code });
+    if (usedByUser >= coupon.perUserLimit) {
+      throw new ConflictError("You've already used this coupon the maximum number of times.");
+    }
+  }
+  if (coupon.newCustomerOnly) {
+    const hasOrders = await Order.exists({ userId });
+    if (hasOrders) throw new ConflictError("This coupon is only valid for new customers.");
+  }
+  if (coupon.restrictedCollections.length > 0) {
+    const eligible = await Product.countDocuments({
+      _id: { $in: lines.map((l) => l.productId) },
+      collections: { $in: coupon.restrictedCollections },
+    });
+    if (eligible === 0) {
+      throw new ConflictError("This coupon doesn't apply to the items in your cart.");
+    }
+  }
+
+  return { couponCode: coupon.code, discount: computeDiscount(coupon, subtotal) };
+}
+
+function computeDiscount(coupon: CouponDoc, subtotal: number): number {
+  let discount =
+    coupon.type === "percent" ? Math.round((subtotal * coupon.value) / 100) : coupon.value;
+  if (coupon.maxDiscount) discount = Math.min(discount, coupon.maxDiscount);
+  return Math.min(discount, subtotal);
+}
+
 export async function createOrder(userId: string, input: CreateOrderInput): Promise<PublicOrder> {
-  const doc = await Order.create({ ...input, userId });
+  // Never trust client-sent price/mrp — re-price every line from the live
+  // product record so a tampered request can't buy at an arbitrary price.
+  const lines = await Promise.all(
+    input.lines.map(async (line) => {
+      const product = await Product.findById(line.productId).catch(() => null);
+      if (!product) throw new NotFoundError(`Product ${line.productId} no longer exists.`);
+      return {
+        ...line,
+        name: product.name,
+        image: product.images[0] ?? line.image,
+        slug: product.slug,
+        price: product.price,
+        mrp: product.mrp,
+      };
+    }),
+  );
+  const subtotal = lines.reduce((sum, l) => sum + l.price * l.quantity, 0);
+
+  let discount = 0;
+  let couponCode: string | null = null;
+  if (input.couponCode) {
+    const priced = await priceCoupon(input.couponCode, userId, subtotal, lines);
+    couponCode = priced.couponCode;
+    discount = priced.discount;
+  }
+
+  const total = Math.max(subtotal - discount, 0) + input.shippingFee + input.tax;
+
+  const doc = await Order.create({
+    ...input,
+    userId,
+    lines,
+    subtotal,
+    discount,
+    couponCode,
+    total,
+    payment: { ...input.payment, amount: total },
+  });
+
+  if (couponCode) {
+    await Coupon.updateOne({ code: couponCode }, { $inc: { timesUsed: 1 } });
+  }
+
   return toPublicOrder(doc);
 }
 
@@ -146,6 +248,26 @@ export async function requestReturn(
     requestedAt: new Date(),
     refundAmount: doc.total,
   };
+  await doc.save();
+  return toPublicOrder(doc);
+}
+
+// Matches the frontend's (previously local-only) cancelOrder logic exactly:
+// only cancellable before it's left the warehouse, refund vs. plain
+// cancellation depends on whether it was already paid.
+const CANCELLABLE_STATUSES = new Set(["confirmed", "processing", "packed", "ready_for_pickup"]);
+
+export async function cancelOrder(id: string, userId: string): Promise<PublicOrder> {
+  const doc = await Order.findById(id);
+  if (!doc) throw new NotFoundError("Order not found.");
+  if (doc.userId !== userId) throw new ForbiddenError("This isn't your order.");
+  if (!CANCELLABLE_STATUSES.has(doc.status)) {
+    throw new ConflictError("This order can no longer be cancelled.");
+  }
+
+  doc.status = "cancelled";
+  doc.payment.status = doc.payment.status === "paid" ? "refunded" : "cancelled";
+  doc.shipment.events.push({ status: "cancelled", label: "Cancelled", at: new Date() });
   await doc.save();
   return toPublicOrder(doc);
 }

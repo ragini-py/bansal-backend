@@ -10,6 +10,7 @@ import { usersRouter } from "./modules/users/users.routes.js";
 import { catalogRouter } from "./modules/catalog/catalog.routes.js";
 import { ordersRouter } from "./modules/orders/orders.routes.js";
 import { couponsRouter } from "./modules/coupons/coupons.routes.js";
+import { cartRouter } from "./modules/cart/cart.routes.js";
 import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
@@ -35,6 +36,7 @@ export function createApp(): Express {
   app.use("/api", catalogRouter);
   app.use("/api/orders", ordersRouter);
   app.use("/api", couponsRouter);
+  app.use("/api/cart", cartRouter);
   app.use("/api", exampleRouter);
 
   app.use(notFoundHandler);

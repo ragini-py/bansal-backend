@@ -31,6 +31,12 @@ export async function requestReturn(req: Request<{ id: string }>, res: Response)
   res.json({ order });
 }
 
+export async function cancel(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const { sub } = req.user as AccessTokenPayload;
+  const order = await ordersService.cancelOrder(req.params.id, sub);
+  res.json({ order });
+}
+
 export async function track(req: Request, res: Response): Promise<void> {
   const id = req.query.id as string | undefined;
   const email = req.query.email as string | undefined;

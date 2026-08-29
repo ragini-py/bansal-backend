@@ -3,7 +3,7 @@ import { authenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
 import { validate } from "../../middleware/validate.js";
 import * as catalogController from "./catalog.controller.js";
-import { updateProductSchema } from "./catalog.schemas.js";
+import { collectionSchema, createProductSchema, updateProductSchema } from "./catalog.schemas.js";
 
 export const catalogRouter = Router();
 
@@ -15,13 +15,46 @@ catalogRouter.get("/products/:slug", catalogController.getProduct);
 catalogRouter.get("/collections", catalogController.listCollections);
 catalogRouter.get("/collections/:slug", catalogController.getCollection);
 
-// Admin write — only what AdminPage's ProductsManagerTab actually does today
-// (toggle published, edit price), sent as a full product replace. No
-// create/delete routes yet: nothing in the UI calls them.
+// Admin write — full CRUD, backing AdminPage's product create/edit/delete
+// and collections management.
+catalogRouter.post(
+  "/products",
+  authenticate,
+  authorize("admin"),
+  validate(createProductSchema),
+  catalogController.createProduct,
+);
 catalogRouter.put(
   "/products/:id",
   authenticate,
   authorize("admin"),
   validate(updateProductSchema),
   catalogController.updateProduct,
+);
+catalogRouter.delete(
+  "/products/:id",
+  authenticate,
+  authorize("admin"),
+  catalogController.deleteProduct,
+);
+
+catalogRouter.post(
+  "/collections",
+  authenticate,
+  authorize("admin"),
+  validate(collectionSchema),
+  catalogController.createCollection,
+);
+catalogRouter.put(
+  "/collections/:id",
+  authenticate,
+  authorize("admin"),
+  validate(collectionSchema),
+  catalogController.updateCollection,
+);
+catalogRouter.delete(
+  "/collections/:id",
+  authenticate,
+  authorize("admin"),
+  catalogController.deleteCollection,
 );

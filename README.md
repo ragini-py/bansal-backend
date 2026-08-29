@@ -36,10 +36,11 @@ needs to point at something real to actually boot.
 - `src/modules/catalog/` — `Product`/`Collection` models + public read endpoints + one admin write endpoint (see below)
 - `src/scripts/seed-catalog.ts` — migrates the frontend's mock catalog into MongoDB, upserted by slug (`npm run seed`)
 - `src/modules/orders/` — `Order` model (embedded lines/address/payment/shipment/returnRequest snapshot, matching the frontend's `Order` type exactly) + create/list/update/return/track endpoints (see below)
+- `src/modules/cart/` — one `Cart` document per user, full-replace GET/PUT (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
 - `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
-- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
+- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 
 ## Access token vs refresh token
@@ -72,20 +73,35 @@ Catalog:
 |---|---|---|
 | `GET /api/products` | — | full list, published and unpublished (client filters/sorts, matching the existing single-fetch mock pattern) |
 | `GET /api/products/:slug` | — | |
-| `PUT /api/products/:id` | admin | full product replace; only path AdminPage's ProductsManagerTab actually uses (publish toggle, price edit) |
+| `POST /api/products` | admin | create; slug must be unique |
+| `PUT /api/products/:id` | admin | full product replace |
+| `DELETE /api/products/:id` | admin | |
 | `GET /api/collections` | — | |
 | `GET /api/collections/:slug` | — | |
+| `POST /api/collections` | admin | create; slug must be unique |
+| `PUT /api/collections/:id` | admin | full collection replace |
+| `DELETE /api/collections/:id` | admin | |
 
 Orders:
 
 | Method & path | Auth | Notes |
 |---|---|---|
-| `POST /api/orders` | access token | creates an order from CheckoutPage's already-computed cart/pricing; `userId` comes from the token, never the request body |
+| `POST /api/orders` | access token | creates an order; `userId` comes from the token, never the request body. **Line price/mrp, subtotal, discount, and total are all re-derived server-side** from live `Product`/`Coupon` data — the client's numbers are only used for request shape, never trusted for the actual charge (see "Order pricing & coupon enforcement" below) |
 | `GET /api/orders/mine` | access token | the caller's own orders |
 | `GET /api/orders` | admin | every order, across every customer |
 | `PATCH /api/orders/:id` | admin | generic partial update — matches the frontend's `updateOrder(id, patch)` exactly (status changes, shipment dispatch, return approval) |
 | `POST /api/orders/:id/return` | access token | must be the order's own owner |
+| `POST /api/orders/:id/cancel` | access token | must be the order's own owner; only allowed while status is `confirmed`/`processing`/`packed`/`ready_for_pickup` (not yet shipped). Marks payment `refunded` if it was `paid`, `cancelled` otherwise |
 | `GET /api/orders/track?id=&email=` | — | public guest lookup, matches TrackPage; **both `id` and `email` are required** — rate-limited (20/15min) since an order id alone (a Mongo ObjectId, not fully random) must never be enough on its own to pull someone else's name/phone/address |
+
+### Order pricing & coupon enforcement
+
+`createOrder` in `orders.service.ts` never trusts the client's price data:
+
+- Every line's `price`/`mrp` is re-read from the live `Product` document by id (404s if the product no longer exists) — a request can't buy at an arbitrary price by editing the request body.
+- `subtotal` is recomputed as the sum of re-priced lines.
+- If a `couponCode` is present, it's re-validated from scratch against the live `Coupon` document: `active`, within `startsAt`/`expiresAt`, `subtotal >= minOrder`, `usageLimit` not exceeded, `perUserLimit` not exceeded for this caller (counted via existing `Order` documents), `newCustomerOnly` (caller must have zero prior orders), and `restrictedCollections` (at least one line's product must belong to one of the listed collections) — any failure is a 409, not a silent full-price fallback. `discount` is computed from the coupon's real `type`/`value`/`maxDiscount`, and the coupon's `timesUsed` is incremented once the order is created.
+- `total` is `max(subtotal - discount, 0) + shippingFee + tax`, and `payment.amount` is set to match — `shippingFee`/`tax` are still taken from the client as-is, since `StoreSettings` (free-shipping threshold, shipping fee) isn't backend-owned yet (see below).
 
 Coupons:
 
@@ -106,18 +122,34 @@ No email provider is wired up — `requestPasswordReset` logs the reset link
 (`{CORS_ORIGIN}/reset-password?token=...`) to the server console instead of
 sending an email. Grab it from there to test the flow locally.
 
+Admin user management:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /api/users` | admin | every user, minus `passwordHash` |
+| `PATCH /api/users/:id` | admin | `{role?, status?}` — promote/demote, block/unblock. An admin can't modify their own row here (self-lockout guard) |
+
+Cart:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /api/cart` | access token | returns `{ lines: [] }` if nothing's been saved yet |
+| `PUT /api/cart` | access token | full replace (upsert) — the frontend sends its whole cart on every change |
+
+One document per user. Guests keep a purely local/localStorage cart exactly
+as before (no auth = no server cart); once signed in, the frontend merges
+its local cart into whatever's saved server-side (summing quantities for
+matching variants) and pushes every change after that, so a cart survives
+across devices and sessions instead of living only in one browser.
+
 ## Scope of this pass — what's deliberately not here yet
 
 Built incrementally, one module at a time — everything below is a deliberate
 gap, not an oversight:
 
-- **Product/collection create & delete, and all of collections management** — no admin UI calls them yet (AdminPage only toggles publish + edits price on existing products), so no endpoints were added for them. `saveCollection`/`deleteCollection`/`deleteProduct` still exist in the frontend's `useStore()` as local-only state.
-- **Real image uploads** — seeded product/collection images are static files under the frontend's `public/products/` and `public/collections/` folders (stable, unhashed URLs), not an uploaded-asset pipeline. Fine for the migrated mock catalog; a real admin "add new product" flow will need actual image upload/storage.
-- **Order pricing/cart is still client-computed** — `POST /api/orders` persists the order the frontend already builds (subtotal/discount/total etc.) rather than recomputing and verifying it server-side from live product prices. Cart itself remains entirely client-side/localStorage. Re-deriving pricing server-side (and rejecting a tampered total) is real future hardening, deliberately out of scope here — this pass made an existing client action durable, it didn't change the trust boundary.
-- **`cancelOrder`** — no UI calls it; stays a local-only mutation in the frontend store, same rule as above.
-- **Coupon usage enforcement** — `usageLimit`/`perUserLimit`/`newCustomerOnly`/`restrictedCollections` exist on the model and are stored, but (matching the pre-existing mock behavior exactly) nothing actually enforces them yet — `applyCoupon` only checks `active`, `expiresAt`, and `minOrder`. `timesUsed` is stored but never incremented.
+- **Real image uploads** — product/collection images are entered as plain URL strings in the admin forms (newline/URL-per-field), not an uploaded-asset pipeline. The seeded catalog's images are static files under the frontend's `public/products/` and `public/collections/` folders for this reason. A real "upload a photo" flow is separate future work.
+- **Shipping fee / tax are still client-supplied** — `StoreSettings` (free-shipping threshold, shipping fee amount) isn't a backend-owned model yet, so there's nothing authoritative to recompute those two fields against. Only the product-price and coupon-discount portions of the total are server-verified.
 - **Real transactional email** — see "Password reset" above; a real provider (Postmark/SES/etc.) is a separate future integration.
-- **Admin user management** (promoting a user to `admin`, blocking accounts) — no endpoint exists; the `role`/`status` fields are there on the model, tested directly against the DB in `auth.e2e.test.ts`, but need a real admin-only route once the admin panel is wired up.
 
 ## Testing
 

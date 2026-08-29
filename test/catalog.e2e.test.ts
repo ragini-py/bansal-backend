@@ -181,4 +181,144 @@ describe("catalog (against a real MongoDB instance)", () => {
     });
     assert.equal(res.status, 404);
   });
+
+  it("rejects product creation from a non-admin customer", async () => {
+    const res = await fetch(`${base}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ ...productInput, slug: "another-product" }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets an admin create a product", async () => {
+    const res = await fetch(`${base}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ ...productInput, slug: "new-test-saree", name: "New Test Saree" }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.product.slug, "new-test-saree");
+  });
+
+  it("rejects creating a product with a duplicate slug", async () => {
+    const res = await fetch(`${base}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ ...productInput, slug: "new-test-saree" }),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("rejects product deletion from a non-admin customer", async () => {
+    const res = await fetch(`${base}/api/products/${seededProductId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets an admin delete a product", async () => {
+    const res = await fetch(`${base}/api/products/${seededProductId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 204);
+
+    const getRes = await fetch(`${base}/api/products/test-silk-saree`);
+    assert.equal(getRes.status, 404);
+  });
+
+  it("404s deleting a product that doesn't exist", async () => {
+    const res = await fetch(`${base}/api/products/000000000000000000000000`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 404);
+  });
+});
+
+const collectionInput = {
+  slug: "test-collection",
+  name: "Test Collection",
+  description: "A test collection.",
+  coverImage: "/collections/test.jpg",
+  bannerImage: "/collections/test.jpg",
+  productIds: [],
+  featured: false,
+  published: true,
+  order: 1,
+};
+
+describe("collections admin CRUD (against a real MongoDB instance)", () => {
+  let collectionId: string;
+
+  it("rejects collection creation from a non-admin customer", async () => {
+    const res = await fetch(`${base}/api/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(collectionInput),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets an admin create a collection", async () => {
+    const res = await fetch(`${base}/api/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(collectionInput),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.collection.slug, "test-collection");
+    collectionId = body.collection.id;
+  });
+
+  it("rejects creating a collection with a duplicate slug", async () => {
+    const res = await fetch(`${base}/api/collections`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(collectionInput),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("lets an admin update a collection", async () => {
+    const res = await fetch(`${base}/api/collections/${collectionId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ ...collectionInput, name: "Renamed Collection" }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.collection.name, "Renamed Collection");
+  });
+
+  it("rejects collection deletion from a non-admin customer", async () => {
+    const res = await fetch(`${base}/api/collections/${collectionId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets an admin delete a collection", async () => {
+    const res = await fetch(`${base}/api/collections/${collectionId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 204);
+
+    const getRes = await fetch(`${base}/api/collections/test-collection`);
+    assert.equal(getRes.status, 404);
+  });
+
+  it("404s deleting a collection that doesn't exist", async () => {
+    const res = await fetch(`${base}/api/collections/000000000000000000000000`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(res.status, 404);
+  });
 });

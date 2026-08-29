@@ -29,6 +29,7 @@ const orderLineSchema = z.object({
   price: z.number().min(0),
   mrp: z.number().min(0),
 });
+export type CreateOrderLineInput = z.infer<typeof orderLineSchema>;
 
 const orderAddressSchema = z.object({
   id: z.string().min(1),
@@ -90,11 +91,14 @@ const returnRequestSchema = z.object({
   refundAmount: z.number(),
 });
 
-// Sent by CheckoutPage's placeOrder — a fully-formed order (cart pricing is
-// still computed client-side; this pass makes that existing action durable,
-// it doesn't re-verify cart pricing server-side, which is the cart module's
-// job when that's built). `userId` is deliberately NOT accepted from the
-// client — the authenticated caller's own id is used instead.
+// Sent by CheckoutPage's placeOrder. `userId` is deliberately NOT accepted
+// from the client — the authenticated caller's own id is used instead. Line
+// price/mrp, subtotal, discount, and total are all re-derived server-side
+// from live Product/Coupon data in orders.service.ts's createOrder — the
+// client's numbers here are used only for the shape of the request, never
+// trusted for the actual charge. shippingFee/tax are still taken as given
+// (StoreSettings — free-shipping threshold, shipping fee — isn't backend-
+// owned yet, so there's nothing authoritative to recompute them against).
 export const createOrderSchema = z.object({
   customerName: z.string().min(1),
   email: z.string().trim().toLowerCase().email(),

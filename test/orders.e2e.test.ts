@@ -11,11 +11,16 @@ let customerToken: string;
 let otherCustomerToken: string;
 let adminToken: string;
 let createdOrderId: string;
+let seededProductId: string;
 
 function readJson(res: Response): Promise<any> {
   return res.json();
 }
 
+// price/mrp are ignored by the server (re-derived from the live Product —
+// see orders.service.ts's createOrder) and are here only to keep the
+// request shape valid; assertions below check against the seeded product's
+// real price (10000/12000), not these values.
 function buildOrderInput(overrides: Record<string, unknown> = {}) {
   return {
     customerName: "Priya Sharma",
@@ -23,7 +28,7 @@ function buildOrderInput(overrides: Record<string, unknown> = {}) {
     phone: "9876543210",
     lines: [
       {
-        productId: "000000000000000000000001",
+        productId: seededProductId,
         name: "Test Saree",
         image: "/products/test.jpg",
         slug: "test-saree",
@@ -136,6 +141,24 @@ before(async () => {
   customerToken = await login("orders-customer@example.com");
   otherCustomerToken = await login("orders-other@example.com");
   adminToken = await login("orders-admin@example.com");
+
+  const { Product } = await import("../src/modules/catalog/models/index.js");
+  const product = await Product.create({
+    slug: "test-saree",
+    name: "Test Saree",
+    price: 10000,
+    mrp: 12000,
+    images: ["/products/test.jpg"],
+    category: "Sarees",
+    collections: [],
+    shortDescription: "A test saree.",
+    description: "A test saree used for e2e coverage.",
+    sizes: ["Free Size"],
+    colours: ["Gold"],
+    variants: [{ size: "Free Size", colour: "Gold", availability: "available" }],
+    published: true,
+  });
+  seededProductId = product._id.toString();
 });
 
 after(async () => {
@@ -161,6 +184,62 @@ describe("orders (against a real MongoDB instance)", () => {
       body: JSON.stringify(buildOrderInput({ lines: [] })),
     });
     assert.equal(res.status, 400);
+  });
+
+  it("re-prices lines from the live product, ignoring a tampered client price", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          lines: [
+            {
+              productId: seededProductId,
+              name: "Test Saree",
+              image: "/products/test.jpg",
+              slug: "test-saree",
+              size: "Free Size",
+              colour: "Gold",
+              quantity: 2,
+              price: 1, // tampered — real price is 10000
+              mrp: 1,
+            },
+          ],
+          subtotal: 2, // tampered — should become 20000 (2 x real price)
+          total: 2,
+        }),
+      ),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.order.lines[0].price, 10000);
+    assert.equal(body.order.subtotal, 20000);
+    assert.equal(body.order.total, 20000);
+  });
+
+  it("404s creating an order for a product that doesn't exist", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          lines: [
+            {
+              productId: "000000000000000000000099",
+              name: "Ghost Product",
+              image: "",
+              slug: "ghost",
+              size: "M",
+              colour: "Gold",
+              quantity: 1,
+              price: 100,
+              mrp: 100,
+            },
+          ],
+        }),
+      ),
+    });
+    assert.equal(res.status, 404);
   });
 
   it("creates an order for the authenticated caller, ignoring any client-sent userId", async () => {
@@ -244,6 +323,69 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(body.order.returnRequest.reason, "Not what I expected");
   });
 
+  it("prevents a customer from cancelling someone else's order", async () => {
+    const createRes = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(buildOrderInput()),
+    });
+    const { order } = await readJson(createRes);
+
+    const res = await fetch(`${base}/api/orders/${order.id}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${otherCustomerToken}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets the owning customer cancel an order that hasn't shipped, and refunds it if it was paid", async () => {
+    const createRes = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          payment: {
+            method: "razorpay",
+            status: "paid",
+            amount: 10000,
+            razorpayPaymentId: "pay_test",
+            transactionId: null,
+            paidAt: new Date().toISOString(),
+            refundStatus: "none",
+            refundAmount: 0,
+          },
+        }),
+      ),
+    });
+    const { order } = await readJson(createRes);
+
+    const res = await fetch(`${base}/api/orders/${order.id}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.order.status, "cancelled");
+    assert.equal(body.order.payment.status, "refunded");
+    assert.ok(body.order.shipment.events.some((e: { status: string }) => e.status === "cancelled"));
+  });
+
+  it("won't cancel an order that has already shipped", async () => {
+    const res = await fetch(`${base}/api/orders/${createdOrderId}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("404s cancelling an order that doesn't exist", async () => {
+    const res = await fetch(`${base}/api/orders/000000000000000000000000/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(res.status, 404);
+  });
+
   it("tracks an order publicly by id + email, without auth", async () => {
     const res = await fetch(`${base}/api/orders/track?id=${createdOrderId}&email=orders-customer@example.com`);
     const body = await readJson(res);
@@ -264,5 +406,134 @@ describe("orders (against a real MongoDB instance)", () => {
   it("404s tracking an id that doesn't exist", async () => {
     const res = await fetch(`${base}/api/orders/track?id=000000000000000000000000&email=orders-customer@example.com`);
     assert.equal(res.status, 404);
+  });
+});
+
+describe("coupon enforcement at order creation (against a real MongoDB instance)", () => {
+  let freshCustomerToken: string;
+  let freshCustomerEmail: string;
+
+  async function makeCoupon(overrides: Record<string, unknown> = {}) {
+    const { Coupon } = await import("../src/modules/coupons/models/coupon.model.js");
+    return Coupon.create({
+      code: `TEST${Date.now()}${Math.floor(Math.random() * 1000)}`,
+      type: "percent",
+      value: 10,
+      minOrder: 0,
+      startsAt: new Date(Date.now() - 60_000),
+      expiresAt: new Date(Date.now() + 60_000),
+      active: true,
+      ...overrides,
+    });
+  }
+
+  before(async () => {
+    freshCustomerEmail = `coupon-cust-${Date.now()}@example.com`;
+    await fetch(`${base}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: "Coupon",
+        lastName: "Cust",
+        email: freshCustomerEmail,
+        phone: "9876543210",
+        password: "correct-horse-1",
+      }),
+    });
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: freshCustomerEmail, password: "correct-horse-1" }),
+    });
+    freshCustomerToken = (await readJson(loginRes)).accessToken;
+  });
+
+  it("applies a valid coupon's discount and increments timesUsed", async () => {
+    const coupon = await makeCoupon({ value: 10 });
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code, discount: 999 }),
+      ),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.order.discount, 1000); // 10% of 10000
+    assert.equal(body.order.total, 9000);
+
+    const { Coupon } = await import("../src/modules/coupons/models/coupon.model.js");
+    const updated = await Coupon.findById(coupon._id);
+    assert.equal(updated?.timesUsed, 1);
+  });
+
+  it("rejects an order with an unknown coupon code", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: "NOPE404" })),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("rejects an order with an expired coupon", async () => {
+    const coupon = await makeCoupon({
+      startsAt: new Date(Date.now() - 120_000),
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("rejects an order below the coupon's minimum order value", async () => {
+    const coupon = await makeCoupon({ minOrder: 50000 });
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("enforces perUserLimit — a second use by the same customer is rejected", async () => {
+    const coupon = await makeCoupon({ perUserLimit: 1 });
+    const first = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(first.status, 201);
+
+    const second = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(second.status, 409);
+  });
+
+  it("enforces newCustomerOnly — rejected once the customer already has an order", async () => {
+    // freshCustomerToken already has orders from the tests above.
+    const coupon = await makeCoupon({ newCustomerOnly: true });
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("enforces restrictedCollections — rejected when the cart has no matching product", async () => {
+    const coupon = await makeCoupon({ restrictedCollections: ["heritage-classics"] });
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(res.status, 409);
   });
 });

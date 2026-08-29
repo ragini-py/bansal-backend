@@ -34,3 +34,21 @@ export const updateProductSchema = z.object({
   published: z.boolean(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+
+// Same shape as an update — creating a new product from AdminPage's "Create
+// Product" form sends the same full-object shape, just with no existing :id.
+export const createProductSchema = updateProductSchema;
+export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+export const collectionSchema = z.object({
+  slug: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  description: z.string().trim().min(1),
+  coverImage: z.string().trim().min(1),
+  bannerImage: z.string().trim().min(1),
+  productIds: z.array(z.string().trim().min(1)),
+  featured: z.boolean(),
+  published: z.boolean(),
+  order: z.number(),
+});
+export type CollectionInput = z.infer<typeof collectionSchema>;
