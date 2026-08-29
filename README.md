@@ -37,13 +37,14 @@ needs to point at something real to actually boot.
 - `src/scripts/seed-catalog.ts` — migrates the frontend's mock catalog into MongoDB, upserted by slug (`npm run seed`)
 - `src/modules/orders/` — `Order` model (embedded lines/address/payment/shipment/returnRequest snapshot, matching the frontend's `Order` type exactly) + create/list/update/return/track endpoints (see below)
 - `src/modules/cart/` — one `Cart` document per user, full-replace GET/PUT (see below)
+- `src/modules/wishlist/` — one `Wishlist` document per user (`productIds: string[]`), full-replace GET/PUT, same pattern as cart
 - `src/modules/uploads/` — admin image upload, Cloudinary or local-disk fallback (see below)
 - `src/utils/email.ts` — transactional email, real SMTP or console-log fallback (see below)
 - `src/modules/settings/` — one singleton `Settings` document for the whole store, public GET, admin-editable PATCH for shipping/COD fields (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
 - `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
-- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
+- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts`, `test/wishlist.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 
 ## Access token vs refresh token
@@ -145,6 +146,17 @@ as before (no auth = no server cart); once signed in, the frontend merges
 its local cart into whatever's saved server-side (summing quantities for
 matching variants) and pushes every change after that, so a cart survives
 across devices and sessions instead of living only in one browser.
+
+Wishlist:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /api/wishlist` | access token | returns `{ productIds: [] }` if nothing's been saved yet |
+| `PUT /api/wishlist` | access token | full replace (upsert) |
+
+Same sync model as cart: guests keep a local-only wishlist; once signed in,
+the frontend merges the local list into the server's (union of both, since
+there's no quantity to sum — just presence) and pushes every change after.
 
 Image uploads:
 

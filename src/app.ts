@@ -14,6 +14,7 @@ import { couponsRouter } from "./modules/coupons/coupons.routes.js";
 import { cartRouter } from "./modules/cart/cart.routes.js";
 import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
 import { settingsRouter } from "./modules/settings/settings.routes.js";
+import { wishlistRouter } from "./modules/wishlist/wishlist.routes.js";
 import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 
@@ -55,6 +56,7 @@ export function createApp(): Express {
   app.use("/api/cart", cartRouter);
   app.use("/api/uploads", uploadsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/wishlist", wishlistRouter);
   app.use("/api", exampleRouter);
 
   app.use(notFoundHandler);
