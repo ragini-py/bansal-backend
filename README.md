@@ -41,10 +41,11 @@ needs to point at something real to actually boot.
 - `src/modules/uploads/` — admin image upload, Cloudinary or local-disk fallback (see below)
 - `src/utils/email.ts` — transactional email, real SMTP or console-log fallback (see below)
 - `src/modules/settings/` — one singleton `Settings` document for the whole store, public GET, admin-editable PATCH for shipping/COD fields (see below)
+- `src/modules/content/` — one singleton `Content` document backing the homepage (announcement bar, hero, editorial/promo/story copy, section visibility, featured product/collection picks), public GET, admin-editable PATCH (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
 - `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
-- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts`, `test/wishlist.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
+- `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts`, `test/wishlist.e2e.test.ts`, `test/content.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 
 ## Access token vs refresh token
@@ -192,6 +193,19 @@ free-shipping threshold or shipping fee here takes effect on the very next
 order. `emailProviderConnected` in the response is never stored — it's a
 live `env.smtp !== null` check, so it always reflects whether SMTP is
 actually configured, not a flag someone could forget to flip.
+
+Homepage content:
+
+| Method & path | Auth | Notes |
+|---|---|---|
+| `GET /api/content` | — | public — the homepage and navbar read this without signing in. Creates the (singleton) content document, seeded with the storefront's original launch copy, on first call if none exists yet |
+| `PATCH /api/content` | admin | `{announcement?, hero?, editorial?, promo?, story?, sections?, featuredCollectionIds?, featuredProductIds?}` — every field the frontend actually renders is editable; `featuredCollectionIds`/`featuredProductIds` are slugs (matched against the live catalog by slug, not id, since ids are DB-generated and vary per deployment) |
+
+One document for the whole store, same convention as Settings. `sections`
+is an ordered list of `{key, label, visible}` toggles the homepage checks
+before rendering each block (`collections`, `new-arrivals`, `editorial`,
+`featured`, `bestsellers`, `promo`, `newsletter`, `story`) — an admin can
+hide a section without deleting its copy.
 
 ## Scope of this pass — what's deliberately not here yet
 
