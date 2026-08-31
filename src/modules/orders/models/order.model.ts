@@ -118,6 +118,11 @@ const orderSchema = new Schema(
     // Not a hard ref: checkout always requires auth today, but orders are
     // display-only historical records — no join is ever performed on this.
     userId: { type: String, required: true, index: true },
+    // Client-generated per-checkout-attempt key (see orders.service.ts's
+    // createOrder) — lets a network retry or a double-tap on "Place Order"
+    // return the original order instead of creating a duplicate. Sparse so
+    // orders placed without one (older clients) don't collide on `null`.
+    idempotencyKey: { type: String, default: null },
     customerName: { type: String, required: true },
     email: { type: String, required: true, trim: true, lowercase: true },
     phone: { type: String, required: true },
@@ -135,6 +140,13 @@ const orderSchema = new Schema(
     returnRequest: { type: returnRequestSchema, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
+);
+
+// Enforced only when idempotencyKey is actually set (partialFilterExpression)
+// so historical/legacy orders with no key never collide with each other.
+orderSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: "string" } } },
 );
 
 export type OrderDoc = HydratedDocument<InferSchemaType<typeof orderSchema>>;

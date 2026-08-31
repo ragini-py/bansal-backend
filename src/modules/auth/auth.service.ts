@@ -124,8 +124,21 @@ export async function loginUser(input: LoginInput, meta: RequestMeta): Promise<{
 
 export async function rotateSession(rawRefreshToken: string, meta: RequestMeta): Promise<SessionTokens> {
   const hash = hashToken(rawRefreshToken);
-  const session = await Session.findOne({ refreshTokenHash: hash, revokedAt: null, expiresAt: { $gt: new Date() } });
-  if (!session) throw new UnauthorizedError("Invalid or expired refresh token.");
+  const session = await Session.findOne({ refreshTokenHash: hash });
+  if (!session || session.expiresAt < new Date()) {
+    throw new UnauthorizedError("Invalid or expired refresh token.");
+  }
+
+  // Reuse detection: a session is only ever revoked by rotation, logout, or a
+  // password reset. Seeing a *second* attempt to use one that's already
+  // revoked means either the token was stolen and the thief raced the real
+  // user, or the user's other tokens were compromised too — either way, the
+  // safe response is to kill every live session for this account, not just
+  // reject the one request.
+  if (session.revokedAt) {
+    await Session.updateMany({ userId: session.userId, revokedAt: null }, { revokedAt: new Date() });
+    throw new UnauthorizedError("Invalid or expired refresh token.");
+  }
 
   const user = await User.findById(session.userId);
   if (!user) {

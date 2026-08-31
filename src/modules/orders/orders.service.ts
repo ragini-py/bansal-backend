@@ -171,7 +171,16 @@ function computeDiscount(coupon: CouponDoc, subtotal: number): number {
   return Math.min(discount, subtotal);
 }
 
-export async function createOrder(userId: string, input: CreateOrderInput): Promise<PublicOrder> {
+export async function createOrder(
+  userId: string,
+  input: CreateOrderInput,
+  idempotencyKey?: string,
+): Promise<PublicOrder> {
+  if (idempotencyKey) {
+    const existing = await Order.findOne({ userId, idempotencyKey });
+    if (existing) return toPublicOrder(existing);
+  }
+
   // Never trust client-sent price/mrp — re-price every line from the live
   // product record so a tampered request can't buy at an arbitrary price.
   const lines = await Promise.all(
@@ -216,6 +225,22 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
   const tax = 0; // GST is included in listed prices — same as store.tsx's totals().
   const total = afterDiscount + shippingFee + codFee + tax;
 
+  // Atomically claim a usage slot right before creating the order (not just
+  // read-then-later-increment) — otherwise two checkouts racing near the
+  // usage limit can both pass priceCoupon's read-only check and the coupon
+  // ends up used more times than usageLimit allows. The $expr comparison
+  // only matches (and increments) if there's still room.
+  if (couponCode) {
+    const claimed = await Coupon.findOneAndUpdate(
+      {
+        code: couponCode,
+        $or: [{ usageLimit: null }, { $expr: { $lt: ["$timesUsed", "$usageLimit"] } }],
+      },
+      { $inc: { timesUsed: 1 } },
+    );
+    if (!claimed) throw new ConflictError("This coupon has reached its usage limit.");
+  }
+
   // status/payment/shipment/returnRequest are never trusted from the client
   // at creation time — a tampered request could otherwise mark itself
   // "delivered" or "paid" with a fabricated razorpayPaymentId before any
@@ -224,46 +249,59 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
   // here. Real Razorpay success can only ever come from a future
   // signature-verified webhook/callback, never this endpoint.
   const eta = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
-  const doc = await Order.create({
-    customerName: input.customerName,
-    email: input.email,
-    phone: input.phone,
-    address: input.address,
-    userId,
-    lines,
-    subtotal,
-    discount,
-    couponCode,
-    shippingFee: shippingFee + codFee,
-    tax,
-    total,
-    status: "confirmed",
-    payment: {
-      method: input.payment.method,
-      status: input.payment.method === "cod" ? "pending" : "processing",
-      amount: total,
-      razorpayPaymentId: null,
-      transactionId: null,
-      paidAt: null,
-      refundStatus: "none",
-      refundAmount: 0,
-    },
-    shipment: {
-      courier: null,
-      awb: null,
-      shipmentId: null,
-      trackingUrl: null,
-      estimatedDelivery: eta,
-      attempts: 0,
-      ndrReason: null,
-      rto: false,
-      events: [{ status: "confirmed", label: "Order Confirmed", at: new Date() }],
-    },
-    returnRequest: null,
-  });
-
-  if (couponCode) {
-    await Coupon.updateOne({ code: couponCode }, { $inc: { timesUsed: 1 } });
+  let doc: OrderDoc;
+  try {
+    doc = await Order.create({
+      customerName: input.customerName,
+      email: input.email,
+      phone: input.phone,
+      address: input.address,
+      userId,
+      idempotencyKey: idempotencyKey ?? null,
+      lines,
+      subtotal,
+      discount,
+      couponCode,
+      shippingFee: shippingFee + codFee,
+      tax,
+      total,
+      status: "confirmed",
+      payment: {
+        method: input.payment.method,
+        status: input.payment.method === "cod" ? "pending" : "processing",
+        amount: total,
+        razorpayPaymentId: null,
+        transactionId: null,
+        paidAt: null,
+        refundStatus: "none",
+        refundAmount: 0,
+      },
+      shipment: {
+        courier: null,
+        awb: null,
+        shipmentId: null,
+        trackingUrl: null,
+        estimatedDelivery: eta,
+        attempts: 0,
+        ndrReason: null,
+        rto: false,
+        events: [{ status: "confirmed", label: "Order Confirmed", at: new Date() }],
+      },
+      returnRequest: null,
+    });
+  } catch (err) {
+    // No multi-document transaction here (would need a replica set) — if the
+    // order write fails after we already claimed a coupon usage slot above,
+    // give the slot back so a failed checkout never silently eats a real
+    // customer's usage. A concurrent retry with the same idempotency key
+    // hitting the unique index also lands here — refetch and return the
+    // order that retry actually created instead of erroring.
+    if (couponCode) await Coupon.updateOne({ code: couponCode }, { $inc: { timesUsed: -1 } });
+    if (idempotencyKey) {
+      const existing = await Order.findOne({ userId, idempotencyKey });
+      if (existing) return toPublicOrder(existing);
+    }
+    throw err;
   }
 
   // Best-effort — a broken email provider must never fail an already-placed

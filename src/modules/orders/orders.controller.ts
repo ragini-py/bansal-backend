@@ -5,7 +5,8 @@ import type { CreateOrderInput, RequestReturnInput, UpdateOrderInput } from "./o
 
 export async function create(req: Request, res: Response): Promise<void> {
   const { sub } = req.user as AccessTokenPayload;
-  const order = await ordersService.createOrder(sub, req.body as CreateOrderInput);
+  const idempotencyKey = req.header("Idempotency-Key") || undefined;
+  const order = await ordersService.createOrder(sub, req.body as CreateOrderInput, idempotencyKey);
   res.status(201).json({ order });
 }
 

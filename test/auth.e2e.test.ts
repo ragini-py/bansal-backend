@@ -215,6 +215,42 @@ describe("auth flow (against a real MongoDB instance)", () => {
     await User.updateOne({ email }, { status: "active" });
   });
 
+  it("reusing an already-rotated refresh token revokes the whole session family", async () => {
+    const reuseEmail = "arjun@example.com";
+    const reusePassword = "correct-horse-2";
+
+    const registerRes = await fetch(`${base}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: "Arjun",
+        lastName: "Rao",
+        email: reuseEmail,
+        phone: "9876500000",
+        password: reusePassword,
+      }),
+    });
+    const stolenCookie = extractRefreshCookie(registerRes);
+    assert.ok(stolenCookie);
+
+    // Legit rotation: the real client uses the token once.
+    const rotateRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: stolenCookie! } });
+    assert.equal(rotateRes.status, 200);
+    const currentCookie = extractRefreshCookie(rotateRes);
+    assert.ok(currentCookie);
+
+    // Attacker replays the now-rotated token — rejected, and this must also
+    // kill the legitimate session that replaced it, not just this request.
+    const replayRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: stolenCookie! } });
+    assert.equal(replayRes.status, 401);
+
+    const legitFollowUpRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: { Cookie: currentCookie! },
+    });
+    assert.equal(legitFollowUpRes.status, 401);
+  });
+
   it("login route has rate-limit headers wired up", async () => {
     // The limiter's actual "trips after N requests" behavior is tested in
     // isolation in rate-limit.test.ts — this suite's limit is deliberately

@@ -49,7 +49,12 @@ export const env = {
   nodeEnv: parsed.data.NODE_ENV,
   isProduction: parsed.data.NODE_ENV === "production",
   appUrl: parsed.data.APP_URL,
-  corsOrigin: parsed.data.CORS_ORIGIN,
+  // CORS_ORIGIN may be a comma-separated allowlist (e.g. a staging + prod
+  // domain). corsOrigin stays the single first entry for building outbound
+  // links (email templates); corsOrigins is the full list the CORS
+  // middleware actually checks incoming requests against.
+  corsOrigin: parsed.data.CORS_ORIGIN.split(",")[0].trim(),
+  corsOrigins: parsed.data.CORS_ORIGIN.split(",").map((o) => o.trim()),
   mongoUri: parsed.data.MONGODB_URI,
   jwt: {
     accessSecret: parsed.data.JWT_ACCESS_SECRET,
@@ -89,5 +94,9 @@ export const env = {
     // Guest order tracking requires id + email together, but is still
     // unauthenticated — rate-limited to slow down brute-forcing that pair.
     trackOrderMax: isTest ? 10_000 : 20,
+    // Authenticated, but still throttled — checkout touches coupon codes and
+    // Order.create, so an unthrottled loop could brute-force coupon codes or
+    // hammer the DB with junk orders.
+    orderCreateMax: isTest ? 10_000 : 30,
   },
 };

@@ -207,6 +207,18 @@ before rendering each block (`collections`, `new-arrivals`, `editorial`,
 `featured`, `bestsellers`, `promo`, `newsletter`, `story`) — an admin can
 hide a section without deleting its copy.
 
+## Security hardening
+
+- **Refresh-token reuse detection** — a refresh token is only ever revoked by rotation, logout, or a password reset. If a *second* request tries to use one that's already revoked, that's treated as a compromise signal (stolen token replayed, or a race against the real client) and every other live session for that account is revoked too, not just the one request rejected. See `auth.service.ts`'s `rotateSession`.
+- **Coupon usage limits are enforced atomically** — `usageLimit` is claimed with a single conditional `findOneAndUpdate` immediately before the order is written, not read-then-increment-later, so two checkouts racing near the limit can't both slip through. If the order write fails afterward (no product, tampered line, etc.), the claimed slot is handed back. See `orders.service.ts`'s `createOrder`.
+- **Idempotency key on `POST /orders`** — pass an `Idempotency-Key` header per checkout attempt; a retried request with the same key returns the original order instead of creating a duplicate. Scoped per-user via a partial unique index on `{userId, idempotencyKey}` (only enforced when a key is actually present, so older/keyless requests never collide).
+- **Upload magic-byte verification** — `POST /api/uploads` sniffs the actual file bytes (`file-type` package) rather than trusting the client-declared mimetype/extension, which are trivially spoofed. Stored filenames are already randomized (`randomUUID()`), so there's no path-traversal/overwrite surface from the original filename either.
+- **CORS is an allowlist, not a single origin** — `CORS_ORIGIN` accepts a comma-separated list; the `cors()` middleware checks the request's `Origin` against it via a function rather than a fixed string, so staging/prod domains can be added without a code change.
+- **Lightweight NoSQL-injection guard** — `sanitizeMongo` (mounted globally in `app.ts`) strips any request body/params/query key starting with `$` or containing `.` before it reaches a route handler. Zod already blocks most of this today (a `z.string()` field rejects an object outright), but this is defense-in-depth for anything added later without strict validation.
+- **`GET /healthz`** — a bare-path alias for `GET /api/health`, for load balancers/orchestrators that probe `/healthz` by convention.
+
+Deliberately **not** addressed in this pass (each needs an infra or product decision first, not just code): CSRF protection for the refresh cookie, a Redis-backed rate limiter/blocklist for multi-instance deployments, Mongo multi-document transactions (needs a replica set), a secrets manager, and horizontal-scaling-safe local uploads (already mitigated by the existing Cloudinary fallback — force it in any multi-instance deployment).
+
 ## Scope of this pass — what's deliberately not here yet
 
 Built incrementally, one module at a time — everything below is a deliberate

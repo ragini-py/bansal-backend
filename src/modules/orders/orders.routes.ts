@@ -24,7 +24,12 @@ ordersRouter.get(
 );
 
 ordersRouter.use(authenticate);
-ordersRouter.post("/", validate(createOrderSchema), ordersController.create);
+ordersRouter.post(
+  "/",
+  limiter(env.rateLimit.orderCreateMax, 15 * 60 * 1000, "Too many order attempts. Please try again in 15 minutes."),
+  validate(createOrderSchema),
+  ordersController.create,
+);
 ordersRouter.get("/mine", ordersController.listMine);
 ordersRouter.post("/:id/return", validate(requestReturnSchema), ordersController.requestReturn);
 ordersRouter.post("/:id/cancel", ordersController.cancel);

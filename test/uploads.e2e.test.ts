@@ -110,6 +110,21 @@ describe("uploads (local-disk fallback, no Cloudinary configured)", () => {
     assert.equal(res.status, 400);
   });
 
+  it("rejects a file whose declared mimetype lies about its actual bytes", async () => {
+    // multer's fileFilter only checks the client-declared mimetype (spoofed
+    // to image/png here) — the magic-byte check in uploads.controller.ts is
+    // what has to catch that this is plain text, not a real PNG.
+    const fakeBlob = new Blob([Buffer.from("<?php echo 'not an image'; ?>")], { type: "image/png" });
+    const form = new FormData();
+    form.append("image", fakeBlob, "malicious.png");
+    const res = await fetch(`${base}/api/uploads`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: form,
+    });
+    assert.equal(res.status, 400);
+  });
+
   it("lets an admin upload an image and returns a fetchable local URL", async () => {
     const form = new FormData();
     form.append("image", tinyPngBlob(), "test.png");

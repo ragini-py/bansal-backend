@@ -18,6 +18,7 @@ import { contentRouter } from "./modules/content/content.routes.js";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes.js";
 import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
+import { sanitizeMongo } from "./middleware/sanitize-mongo.js";
 
 export function createApp(): Express {
   const app = express();
@@ -27,13 +28,31 @@ export function createApp(): Express {
   app.use(morgan(env.isProduction ? "combined" : "dev"));
   app.use(express.json());
   app.use(cookieParser());
+  app.use(sanitizeMongo);
 
   // credentials: true is required for the httpOnly refresh cookie to be
-  // sent/accepted cross-origin from the Vite frontend.
-  app.use(cors({ origin: env.corsOrigin, credentials: true }));
+  // sent/accepted cross-origin from the Vite frontend. origin is a function
+  // over an allowlist (env.corsOrigins, comma-separated in CORS_ORIGIN)
+  // rather than a single fixed string, so staging/prod can each be added
+  // without a code change.
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || env.corsOrigins.includes(origin)) callback(null, true);
+        else callback(new Error("Not allowed by CORS"));
+      },
+      credentials: true,
+    }),
+  );
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", uptime: process.uptime() });
+  });
+
+  // Bare-path alias for load balancers/orchestrators that probe /healthz by
+  // convention rather than the API's own /api/health.
+  app.get("/healthz", (_req, res) => {
+    res.status(200).send("ok");
   });
 
   // Local-disk upload fallback (see modules/uploads/uploads.service.ts) —

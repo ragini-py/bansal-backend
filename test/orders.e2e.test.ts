@@ -603,6 +603,134 @@ describe("coupon enforcement at order creation (against a real MongoDB instance)
     });
     assert.equal(res.status, 409);
   });
+
+  it("enforces usageLimit atomically — a claim that would exceed it is rejected, and timesUsed never overshoots", async () => {
+    const coupon = await makeCoupon({ usageLimit: 1 });
+
+    const first = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(first.status, 201);
+
+    const second = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(buildOrderInput({ email: freshCustomerEmail, couponCode: coupon.code })),
+    });
+    assert.equal(second.status, 409);
+
+    const { Coupon } = await import("../src/modules/coupons/models/coupon.model.js");
+    const updated = await Coupon.findById(coupon._id);
+    assert.equal(updated?.timesUsed, 1);
+  });
+
+  it("gives the coupon usage slot back if order creation fails after the claim", async () => {
+    const coupon = await makeCoupon({ usageLimit: 1 });
+
+    // Trigger a post-claim failure deliberately: a line referencing a
+    // product id that doesn't exist 404s inside createOrder, after the
+    // coupon claim has already run.
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${freshCustomerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          email: freshCustomerEmail,
+          couponCode: coupon.code,
+          lines: [
+            {
+              productId: "000000000000000000000099",
+              name: "Ghost Product",
+              image: "",
+              slug: "ghost",
+              size: "M",
+              colour: "Gold",
+              quantity: 1,
+              price: 100,
+              mrp: 100,
+            },
+          ],
+        }),
+      ),
+    });
+    assert.equal(res.status, 404);
+
+    const { Coupon } = await import("../src/modules/coupons/models/coupon.model.js");
+    const updated = await Coupon.findById(coupon._id);
+    assert.equal(updated?.timesUsed, 0);
+  });
+});
+
+describe("idempotent order creation (against a real MongoDB instance)", () => {
+  let idemCustomerToken: string;
+  let idemCustomerEmail: string;
+
+  before(async () => {
+    idemCustomerEmail = `idem-cust-${Date.now()}@example.com`;
+    await fetch(`${base}/api/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: "Idem",
+        lastName: "Cust",
+        email: idemCustomerEmail,
+        phone: "9876543210",
+        password: "correct-horse-1",
+      }),
+    });
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: idemCustomerEmail, password: "correct-horse-1" }),
+    });
+    idemCustomerToken = (await readJson(loginRes)).accessToken;
+  });
+
+  it("a retried request with the same Idempotency-Key returns the original order instead of creating a duplicate", async () => {
+    const key = `checkout-${Date.now()}`;
+    const body = JSON.stringify(buildOrderInput({ email: idemCustomerEmail }));
+
+    const first = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key, Authorization: `Bearer ${idemCustomerToken}` },
+      body,
+    });
+    const firstBody = await readJson(first);
+    assert.equal(first.status, 201);
+
+    const retry = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": key, Authorization: `Bearer ${idemCustomerToken}` },
+      body,
+    });
+    const retryBody = await readJson(retry);
+    assert.equal(retry.status, 201);
+    assert.equal(retryBody.order.id, firstBody.order.id);
+
+    const { Order } = await import("../src/modules/orders/models/order.model.js");
+    const count = await Order.countDocuments({ userId: firstBody.order.userId });
+    assert.equal(count, 1);
+  });
+
+  it("a different Idempotency-Key creates a genuinely separate order", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": `checkout-${Date.now()}-other`,
+        Authorization: `Bearer ${idemCustomerToken}`,
+      },
+      body: JSON.stringify(buildOrderInput({ email: idemCustomerEmail })),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+
+    const { Order } = await import("../src/modules/orders/models/order.model.js");
+    const count = await Order.countDocuments({ userId: body.order.userId });
+    assert.equal(count, 2);
+  });
 });
 
 describe("shipping/COD pricing from live Settings (against a real MongoDB instance)", () => {
