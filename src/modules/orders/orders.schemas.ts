@@ -93,12 +93,16 @@ const returnRequestSchema = z.object({
 
 // Sent by CheckoutPage's placeOrder. `userId` is deliberately NOT accepted
 // from the client — the authenticated caller's own id is used instead. Line
-// price/mrp, subtotal, discount, and total are all re-derived server-side
-// from live Product/Coupon data in orders.service.ts's createOrder — the
-// client's numbers here are used only for the shape of the request, never
-// trusted for the actual charge. shippingFee/tax are still taken as given
-// (StoreSettings — free-shipping threshold, shipping fee — isn't backend-
-// owned yet, so there's nothing authoritative to recompute them against).
+// price/mrp, subtotal, discount, shippingFee, tax, and total are all
+// re-derived server-side from live Product/Coupon/Settings data in
+// orders.service.ts's createOrder — the client's numbers here are used only
+// for the shape of the request, never trusted for the actual charge.
+// `status`, and everything in `payment` besides `method`, plus `shipment`
+// and `returnRequest`, are likewise accepted only for request-shape
+// validity and then discarded — a brand-new order is always built
+// server-side as "confirmed" with a fresh payment/shipment record, so a
+// tampered request can't mark itself paid/delivered/refunded before any
+// real payment or fulfilment has happened.
 export const createOrderSchema = z.object({
   customerName: z.string().min(1),
   email: z.string().trim().toLowerCase().email(),

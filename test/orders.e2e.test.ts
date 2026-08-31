@@ -20,7 +20,11 @@ function readJson(res: Response): Promise<any> {
 // price/mrp are ignored by the server (re-derived from the live Product —
 // see orders.service.ts's createOrder) and are here only to keep the
 // request shape valid; assertions below check against the seeded product's
-// real price (10000/12000), not these values.
+// real price (10000/12000), not these values. Likewise `status`, everything
+// in `payment` besides `method`, `shipment`, and `returnRequest` are all
+// ignored too — a brand-new order is always "confirmed" with a fresh
+// server-built payment/shipment record, never trusted from the client (see
+// orders.service.ts's createOrder).
 function buildOrderInput(overrides: Record<string, unknown> = {}) {
   return {
     customerName: "Priya Sharma",
@@ -245,6 +249,56 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 404);
   });
 
+  it("never trusts a client-asserted payment/order status, forcing a fresh confirmed/processing order regardless of what's sent", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          status: "delivered",
+          payment: {
+            method: "razorpay",
+            status: "paid",
+            amount: 10000,
+            razorpayPaymentId: "pay_fake_client_asserted",
+            transactionId: "fake",
+            paidAt: new Date().toISOString(),
+            refundStatus: "completed",
+            refundAmount: 10000,
+          },
+          shipment: {
+            courier: "FakeCourier",
+            awb: "FAKE123",
+            shipmentId: "ship_fake",
+            trackingUrl: "https://example.com/fake",
+            estimatedDelivery: new Date().toISOString(),
+            attempts: 5,
+            ndrReason: null,
+            rto: false,
+            events: [{ status: "delivered", label: "Delivered", at: new Date().toISOString() }],
+          },
+          returnRequest: {
+            status: "refund_completed",
+            reason: "fake",
+            requestedAt: new Date().toISOString(),
+            refundAmount: 10000,
+          },
+        }),
+      ),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.order.status, "confirmed");
+    assert.equal(body.order.payment.status, "processing");
+    assert.equal(body.order.payment.razorpayPaymentId, null);
+    assert.equal(body.order.payment.paidAt, null);
+    assert.equal(body.order.payment.refundStatus, "none");
+    assert.equal(body.order.shipment.courier, null);
+    assert.equal(body.order.shipment.events.length, 1);
+    assert.equal(body.order.shipment.events[0].status, "confirmed");
+    assert.equal(body.order.returnRequest, null);
+  });
+
   it("creates an order for the authenticated caller, ignoring any client-sent userId", async () => {
     const res = await fetch(`${base}/api/orders`, {
       method: "POST",
@@ -349,11 +403,11 @@ describe("orders (against a real MongoDB instance)", () => {
         buildOrderInput({
           payment: {
             method: "razorpay",
-            status: "paid",
+            status: "processing",
             amount: 10000,
-            razorpayPaymentId: "pay_test",
+            razorpayPaymentId: null,
             transactionId: null,
-            paidAt: new Date().toISOString(),
+            paidAt: null,
             refundStatus: "none",
             refundAmount: 0,
           },
@@ -361,6 +415,13 @@ describe("orders (against a real MongoDB instance)", () => {
       ),
     });
     const { order } = await readJson(createRes);
+
+    // A brand-new razorpay order is never created as "paid" (see
+    // orders.service.ts — that can only ever come from a real payment
+    // verification webhook, not this endpoint). Simulate that webhook
+    // having already run, to exercise cancelOrder's refund branch.
+    const { Order } = await import("../src/modules/orders/models/order.model.js");
+    await Order.updateOne({ _id: order.id }, { $set: { "payment.status": "paid" } });
 
     const res = await fetch(`${base}/api/orders/${order.id}/cancel`, {
       method: "POST",

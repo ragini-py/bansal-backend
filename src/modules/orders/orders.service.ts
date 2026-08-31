@@ -216,8 +216,19 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
   const tax = 0; // GST is included in listed prices — same as store.tsx's totals().
   const total = afterDiscount + shippingFee + codFee + tax;
 
+  // status/payment/shipment/returnRequest are never trusted from the client
+  // at creation time — a tampered request could otherwise mark itself
+  // "delivered" or "paid" with a fabricated razorpayPaymentId before any
+  // real payment happens. Only the payment method (cod/razorpay) comes from
+  // the client; everything else about a brand-new order's state is fixed
+  // here. Real Razorpay success can only ever come from a future
+  // signature-verified webhook/callback, never this endpoint.
+  const eta = new Date(Date.now() + 8 * 24 * 60 * 60 * 1000);
   const doc = await Order.create({
-    ...input,
+    customerName: input.customerName,
+    email: input.email,
+    phone: input.phone,
+    address: input.address,
     userId,
     lines,
     subtotal,
@@ -226,7 +237,29 @@ export async function createOrder(userId: string, input: CreateOrderInput): Prom
     shippingFee: shippingFee + codFee,
     tax,
     total,
-    payment: { ...input.payment, amount: total },
+    status: "confirmed",
+    payment: {
+      method: input.payment.method,
+      status: input.payment.method === "cod" ? "pending" : "processing",
+      amount: total,
+      razorpayPaymentId: null,
+      transactionId: null,
+      paidAt: null,
+      refundStatus: "none",
+      refundAmount: 0,
+    },
+    shipment: {
+      courier: null,
+      awb: null,
+      shipmentId: null,
+      trackingUrl: null,
+      estimatedDelivery: eta,
+      attempts: 0,
+      ndrReason: null,
+      rto: false,
+      events: [{ status: "confirmed", label: "Order Confirmed", at: new Date() }],
+    },
+    returnRequest: null,
   });
 
   if (couponCode) {
