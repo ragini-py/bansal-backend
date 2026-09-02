@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { NotFoundError, UnauthorizedError } from "../../common/app-error.js";
 import { clearRefreshCookie, REFRESH_COOKIE_NAME, setRefreshCookie } from "../../utils/cookies.js";
+import { clearCsrfCookie, setCsrfCookie } from "../../utils/csrf.js";
 import type { AccessTokenPayload } from "../../utils/jwt.js";
 import * as authService from "./auth.service.js";
 import type {
@@ -21,13 +22,15 @@ function requestMeta(req: Request): authService.RequestMeta {
 export async function register(req: Request, res: Response): Promise<void> {
   const { user, accessToken, refreshToken } = await authService.registerUser(req.body as RegisterInput, requestMeta(req));
   setRefreshCookie(res, refreshToken);
-  res.status(201).json({ user, accessToken });
+  const csrfToken = setCsrfCookie(res);
+  res.status(201).json({ user, accessToken, csrfToken });
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
   const { user, accessToken, refreshToken } = await authService.loginUser(req.body as LoginInput, requestMeta(req));
   setRefreshCookie(res, refreshToken);
-  res.json({ user, accessToken });
+  const csrfToken = setCsrfCookie(res);
+  res.json({ user, accessToken, csrfToken });
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {
@@ -39,17 +42,20 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     tokens = await authService.rotateSession(token, requestMeta(req));
   } catch (err) {
     clearRefreshCookie(res);
+    clearCsrfCookie(res);
     throw err;
   }
 
   setRefreshCookie(res, tokens.refreshToken);
-  res.json({ accessToken: tokens.accessToken });
+  const csrfToken = setCsrfCookie(res);
+  res.json({ accessToken: tokens.accessToken, csrfToken });
 }
 
 export async function logout(req: Request, res: Response): Promise<void> {
   const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
   await authService.revokeSession(token);
   clearRefreshCookie(res);
+  clearCsrfCookie(res);
   res.status(204).send();
 }
 

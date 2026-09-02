@@ -14,6 +14,13 @@ function extractRefreshCookie(res: Response): string | undefined {
   return rt?.split(";")[0];
 }
 
+// verify-csrf.ts only checks that the cookie and header match each other,
+// not against any server-stored value — so a request just needs to carry
+// both, self-consistent, for the double-submit check to pass.
+function csrfHeaders(refreshCookie: string, csrfToken: string): Record<string, string> {
+  return { Cookie: `${refreshCookie}; csrfToken=${csrfToken}`, "x-csrf-token": csrfToken };
+}
+
 // Test-only convenience — response bodies here are our own API's JSON.
 function readJson(res: Response): Promise<any> {
   return res.json();
@@ -49,6 +56,7 @@ describe("auth flow (against a real MongoDB instance)", () => {
   const email = "priya@example.com";
   const password = "correct-horse-1";
   let refreshCookie: string;
+  let csrfToken: string;
 
   it("registers a new user and immediately signs them in", async () => {
     const res = await fetch(`${base}/api/auth/register`, {
@@ -65,6 +73,7 @@ describe("auth flow (against a real MongoDB instance)", () => {
     assert.equal("password" in body.user, false);
     assert.equal("passwordHash" in body.user, false);
     assert.ok(body.accessToken);
+    assert.ok(body.csrfToken);
     assert.ok(extractRefreshCookie(res));
   });
 
@@ -95,9 +104,11 @@ describe("auth flow (against a real MongoDB instance)", () => {
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.ok(body.accessToken);
+    assert.ok(body.csrfToken);
     const cookie = extractRefreshCookie(res);
     assert.ok(cookie);
     refreshCookie = cookie;
+    csrfToken = body.csrfToken;
   });
 
   it("rejects the wrong password", async () => {
@@ -172,20 +183,44 @@ describe("auth flow (against a real MongoDB instance)", () => {
     await User.updateOne({ email }, { role: "customer" });
   });
 
+  it("rejects refresh/logout with a missing or mismatched CSRF token", async () => {
+    // Cookie present, no x-csrf-token header at all.
+    const noHeaderRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: refreshCookie } });
+    assert.equal(noHeaderRes.status, 403);
+
+    // Header present but doesn't match the cookie.
+    const mismatchRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: { Cookie: `${refreshCookie}; csrfToken=${csrfToken}`, "x-csrf-token": "not-the-right-value" },
+    });
+    assert.equal(mismatchRes.status, 403);
+
+    const logoutMismatchRes = await fetch(`${base}/api/auth/logout`, {
+      method: "POST",
+      headers: { Cookie: `${refreshCookie}; csrfToken=${csrfToken}`, "x-csrf-token": "not-the-right-value" },
+    });
+    assert.equal(logoutMismatchRes.status, 403);
+  });
+
   it("rotates the refresh token and invalidates the previous one", async () => {
-    const res = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: refreshCookie } });
+    const res = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: csrfHeaders(refreshCookie, csrfToken) });
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.ok(body.accessToken);
+    assert.ok(body.csrfToken);
 
     const rotatedCookie = extractRefreshCookie(res);
     assert.ok(rotatedCookie);
     assert.notEqual(rotatedCookie, refreshCookie);
 
-    const reuseRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: refreshCookie } });
+    const reuseRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: csrfHeaders(refreshCookie, csrfToken),
+    });
     assert.equal(reuseRes.status, 401);
 
     refreshCookie = rotatedCookie;
+    csrfToken = body.csrfToken;
   });
 
   it("rejects refresh with no cookie at all", async () => {
@@ -194,10 +229,16 @@ describe("auth flow (against a real MongoDB instance)", () => {
   });
 
   it("logs out and actually revokes the session (not just the cookie)", async () => {
-    const logoutRes = await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: refreshCookie } });
+    const logoutRes = await fetch(`${base}/api/auth/logout`, {
+      method: "POST",
+      headers: csrfHeaders(refreshCookie, csrfToken),
+    });
     assert.equal(logoutRes.status, 204);
 
-    const refreshAfterLogoutRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: refreshCookie } });
+    const refreshAfterLogoutRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: csrfHeaders(refreshCookie, csrfToken),
+    });
     assert.equal(refreshAfterLogoutRes.status, 401);
   });
 
@@ -230,23 +271,31 @@ describe("auth flow (against a real MongoDB instance)", () => {
         password: reusePassword,
       }),
     });
+    const registerBody = await readJson(registerRes);
     const stolenCookie = extractRefreshCookie(registerRes);
     assert.ok(stolenCookie);
 
     // Legit rotation: the real client uses the token once.
-    const rotateRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: stolenCookie! } });
+    const rotateRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: csrfHeaders(stolenCookie!, registerBody.csrfToken),
+    });
     assert.equal(rotateRes.status, 200);
+    const rotateBody = await readJson(rotateRes);
     const currentCookie = extractRefreshCookie(rotateRes);
     assert.ok(currentCookie);
 
     // Attacker replays the now-rotated token — rejected, and this must also
     // kill the legitimate session that replaced it, not just this request.
-    const replayRes = await fetch(`${base}/api/auth/refresh`, { method: "POST", headers: { Cookie: stolenCookie! } });
+    const replayRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: csrfHeaders(stolenCookie!, registerBody.csrfToken),
+    });
     assert.equal(replayRes.status, 401);
 
     const legitFollowUpRes = await fetch(`${base}/api/auth/refresh`, {
       method: "POST",
-      headers: { Cookie: currentCookie! },
+      headers: csrfHeaders(currentCookie!, rotateBody.csrfToken),
     });
     assert.equal(legitFollowUpRes.status, 401);
   });

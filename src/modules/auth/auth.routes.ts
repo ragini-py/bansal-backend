@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate.js";
 import { limiter } from "../../middleware/rate-limit.js";
 import { validate } from "../../middleware/validate.js";
+import { verifyCsrf } from "../../middleware/verify-csrf.js";
 import { env } from "../../config/env.js";
 import * as authController from "./auth.controller.js";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "./auth.schemas.js";
@@ -22,8 +23,8 @@ authRouter.post(
   authController.login,
 );
 
-authRouter.post("/refresh", authController.refresh);
-authRouter.post("/logout", authController.logout);
+authRouter.post("/refresh", verifyCsrf, authController.refresh);
+authRouter.post("/logout", verifyCsrf, authController.logout);
 authRouter.get("/me", authenticate, authController.me);
 
 authRouter.post(

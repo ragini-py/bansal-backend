@@ -148,7 +148,10 @@ describe("password reset (against a real MongoDB instance)", () => {
 
     const refreshRes = await fetch(`${base}/api/auth/refresh`, {
       method: "POST",
-      headers: { Cookie: `refreshToken=${token}` },
+      // verifyCsrf only checks the two match each other, not against any
+      // server-stored value — any self-consistent pair clears it so this
+      // request reaches the actual (revoked-session) 401 being tested here.
+      headers: { Cookie: `refreshToken=${token}; csrfToken=test-csrf`, "x-csrf-token": "test-csrf" },
     });
     assert.equal(refreshRes.status, 401);
   });
