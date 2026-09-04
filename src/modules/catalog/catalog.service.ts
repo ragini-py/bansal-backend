@@ -120,7 +120,19 @@ export async function createProduct(input: CreateProductInput): Promise<PublicPr
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<PublicProduct> {
   const doc = await Product.findById(id);
   if (!doc) throw new NotFoundError("Product not found.");
-  doc.set(input);
+  if (input.slug !== doc.slug) {
+    const existing = await Product.findOne({ slug: input.slug });
+    if (existing) throw new ConflictError("A product with this slug already exists.");
+  }
+  const { variants, ...rest } = input;
+  doc.set(rest);
+  // Keep each existing variant's _id stable (it's referenced by carts,
+  // wishlists, and past orders as variantId) — only variants with no `id`
+  // (newly added in the admin form) get a fresh one from Mongoose.
+  doc.set(
+    "variants",
+    variants.map((v) => (v.id ? { _id: v.id, size: v.size, colour: v.colour, availability: v.availability } : v)),
+  );
   await doc.save();
   return toPublicProduct(doc);
 }
@@ -151,6 +163,10 @@ export async function createCollection(input: CollectionInput): Promise<PublicCo
 export async function updateCollection(id: string, input: CollectionInput): Promise<PublicCollection> {
   const doc = await Collection.findById(id);
   if (!doc) throw new NotFoundError("Collection not found.");
+  if (input.slug !== doc.slug) {
+    const existing = await Collection.findOne({ slug: input.slug });
+    if (existing) throw new ConflictError("A collection with this slug already exists.");
+  }
   doc.set(input);
   await doc.save();
   return toPublicCollection(doc);

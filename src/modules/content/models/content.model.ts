@@ -15,6 +15,9 @@ const sectionSchema = new Schema(
 
 const contentSchema = new Schema(
   {
+    // Unique + always `true` so the upsert in content.service.ts can never
+    // create a second document even if two "create if missing" requests race.
+    singleton: { type: Boolean, default: true, unique: true },
     announcement: {
       enabled: { type: Boolean, default: true },
       text: { type: String, default: "" },

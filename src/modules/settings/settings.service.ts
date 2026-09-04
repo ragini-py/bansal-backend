@@ -19,12 +19,16 @@ export interface PublicSettings {
   allowGuestBrowsing: boolean;
 }
 
-// There's exactly one settings document — find it, or create it with
-// schema defaults the first time anything asks for it.
+// There's exactly one settings document — find it, or create it with schema
+// defaults the first time anything asks for it. Atomic upsert on the unique
+// `singleton` field (not find-then-create) so two requests racing before the
+// document exists can't each create their own copy.
 async function getOrCreateSettings(): Promise<SettingsDoc> {
-  const existing = await Settings.findOne();
-  if (existing) return existing;
-  return Settings.create({});
+  return Settings.findOneAndUpdate(
+    { singleton: true },
+    { $setOnInsert: { singleton: true } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
 }
 
 function toPublicSettings(doc: SettingsDoc): PublicSettings {

@@ -328,9 +328,50 @@ export async function listAllOrders(): Promise<PublicOrder[]> {
   return docs.map(toPublicOrder);
 }
 
+// Once an order reaches one of these, its fulfilment status can't change
+// further via the generic admin PATCH (returns are handled separately, via
+// returnRequest, and never touch `status`).
+const TERMINAL_ORDER_STATUSES = new Set(["delivered", "cancelled", "rto", "lost"]);
+
+// What a return can legally move to next — mirrors the pipeline implied by
+// the frontend's returnRequest.status union (requested → approved/rejected →
+// pickup → returned → refund initiated → completed).
+const RETURN_TRANSITIONS: Record<string, string[]> = {
+  requested: ["approved", "rejected"],
+  approved: ["pickup_scheduled", "rejected"],
+  pickup_scheduled: ["returned"],
+  returned: ["refund_initiated"],
+  refund_initiated: ["refund_completed"],
+  rejected: [],
+  refund_completed: [],
+};
+
 export async function updateOrder(id: string, patch: UpdateOrderInput): Promise<PublicOrder> {
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found.");
+
+  if (patch.status && patch.status !== doc.status && TERMINAL_ORDER_STATUSES.has(doc.status)) {
+    throw new ConflictError(`This order is already "${doc.status}" and can't be moved to another status.`);
+  }
+
+  if (patch.returnRequest) {
+    if (!doc.returnRequest) throw new ConflictError("No return has been requested for this order.");
+    const from = doc.returnRequest.status;
+    const to = patch.returnRequest.status;
+    if (to !== from && !(RETURN_TRANSITIONS[from] ?? []).includes(to)) {
+      throw new ConflictError(`A return can't move from "${from}" to "${to}".`);
+    }
+    // The only place payment.refundStatus/refundAmount ever change for a
+    // return — without this, an admin marking a return "refund_completed"
+    // left payment.refundStatus stuck at "none" forever.
+    if (to === "refund_completed") {
+      doc.payment.refundStatus = "completed";
+      doc.payment.refundAmount = patch.returnRequest.refundAmount ?? doc.returnRequest.refundAmount;
+    } else if (to === "refund_initiated" && doc.payment.refundStatus === "none") {
+      doc.payment.refundStatus = "initiated";
+    }
+  }
+
   doc.set(patch);
   await doc.save();
   return toPublicOrder(doc);
@@ -344,6 +385,12 @@ export async function requestReturn(
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found.");
   if (doc.userId !== userId) throw new ForbiddenError("This isn't your order.");
+  if (doc.status !== "delivered") {
+    throw new ConflictError("Returns can only be requested for delivered orders.");
+  }
+  if (doc.returnRequest && doc.returnRequest.status !== "rejected") {
+    throw new ConflictError("A return has already been requested for this order.");
+  }
 
   doc.returnRequest = {
     status: "requested",

@@ -18,6 +18,6 @@ export async function upload(req: Request, res: Response): Promise<void> {
     throw new BadRequestError("That file doesn't look like a supported image (jpg, png, webp, gif).");
   }
 
-  const url = await uploadsService.uploadImage(req.file);
+  const url = await uploadsService.uploadImage(req.file, detected.ext);
   res.status(201).json({ url });
 }

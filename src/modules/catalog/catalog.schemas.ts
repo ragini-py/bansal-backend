@@ -5,6 +5,10 @@ import { z } from "zod";
 // DB assigns. Used for the admin update endpoint — the frontend always sends
 // a full product back (spread + patched fields), never a partial diff.
 export const variantSchema = z.object({
+  // Present when editing an existing variant (so the DB can keep its _id
+  // stable across updates — see catalog.service.ts#updateProduct); absent
+  // for a newly-added variant, which gets a fresh id on save.
+  id: z.string().trim().min(1).optional(),
   size: z.string().trim().min(1),
   colour: z.string().trim().min(1),
   availability: z.enum(["available", "unavailable"]),

@@ -368,7 +368,22 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 403);
   });
 
-  it("lets the owning customer request a return", async () => {
+  it("rejects a return request on an order that hasn't been delivered yet", async () => {
+    const res = await fetch(`${base}/api/orders/${createdOrderId}/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ reason: "Too early" }),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("lets the owning customer request a return once the order is delivered", async () => {
+    await fetch(`${base}/api/orders/${createdOrderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ status: "delivered" }),
+    });
+
     const res = await fetch(`${base}/api/orders/${createdOrderId}/return`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
@@ -378,6 +393,15 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 200);
     assert.equal(body.order.returnRequest.status, "requested");
     assert.equal(body.order.returnRequest.reason, "Not what I expected");
+  });
+
+  it("rejects a second return request while one is already in progress", async () => {
+    const res = await fetch(`${base}/api/orders/${createdOrderId}/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ reason: "Trying again" }),
+    });
+    assert.equal(res.status, 409);
   });
 
   it("prevents a customer from cancelling someone else's order", async () => {

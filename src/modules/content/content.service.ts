@@ -46,12 +46,16 @@ const DEFAULT_CONTENT = {
   featuredProductIds: ["emerald-zari-anarkali", "royal-velvet-lehenga"],
 };
 
-// There's exactly one content document — find it, or create it with the
-// seed defaults above the first time anything asks for it.
+// There's exactly one content document — find it, or create it with the seed
+// defaults above the first time anything asks for it. Atomic upsert on the
+// unique `singleton` field (not find-then-create) so two requests racing
+// before the document exists can't each create their own copy.
 async function getOrCreateContent(): Promise<ContentDoc> {
-  const existing = await Content.findOne();
-  if (existing) return existing;
-  return Content.create(DEFAULT_CONTENT);
+  return Content.findOneAndUpdate(
+    { singleton: true },
+    { $setOnInsert: { singleton: true, ...DEFAULT_CONTENT } },
+    { upsert: true, new: true },
+  );
 }
 
 export interface PublicContent {

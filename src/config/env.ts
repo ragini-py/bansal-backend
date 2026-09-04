@@ -91,6 +91,7 @@ export const env = {
     loginMax: isTest ? 10_000 : 5,
     registerMax: isTest ? 10_000 : 5,
     forgotPasswordMax: isTest ? 10_000 : 5,
+    resetPasswordMax: isTest ? 10_000 : 10,
     // Guest order tracking requires id + email together, but is still
     // unauthenticated — rate-limited to slow down brute-forcing that pair.
     trackOrderMax: isTest ? 10_000 : 20,

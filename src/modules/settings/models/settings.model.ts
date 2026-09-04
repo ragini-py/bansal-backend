@@ -5,6 +5,9 @@ import { Schema, model, type InferSchemaType, type HydratedDocument } from "mong
 // this app, so a single global config row is simpler than a key registry.
 const settingsSchema = new Schema(
   {
+    // Unique + always `true` so the upsert in settings.service.ts can never
+    // create a second document even if two "create if missing" requests race.
+    singleton: { type: Boolean, default: true, unique: true },
     brandName: { type: String, default: "Bansal-nx" },
     tagline: { type: String, default: "CRAFTED FOR THE EXTRAORDINARY YOU" },
     supportEmail: { type: String, default: "support@bansal-nx.com" },

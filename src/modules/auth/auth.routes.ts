@@ -33,4 +33,9 @@ authRouter.post(
   validate(forgotPasswordSchema),
   authController.forgotPassword,
 );
-authRouter.post("/reset-password", validate(resetPasswordSchema), authController.resetPassword);
+authRouter.post(
+  "/reset-password",
+  limiter(env.rateLimit.resetPasswordMax, 60 * 60 * 1000, "Too many attempts. Please try again later."),
+  validate(resetPasswordSchema),
+  authController.resetPassword,
+);

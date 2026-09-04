@@ -17,21 +17,16 @@ function configureCloudinary(): void {
   cloudinaryConfigured = true;
 }
 
-function extFromMime(mimetype: string): string {
-  const map: Record<string, string> = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-  };
-  return map[mimetype] ?? "";
-}
-
 // Cloudinary when configured (see .env.example); otherwise local disk under
 // backend/uploads, served statically at {APP_URL}/uploads/<file> (see
 // app.ts) — the feature works fully with zero external setup, and upgrades
 // to real cloud storage the moment CLOUDINARY_* is filled in.
-export async function uploadImage(file: Express.Multer.File): Promise<string> {
+//
+// `sniffedExt` comes from the controller's magic-byte detection
+// (file-type's fileTypeFromBuffer), never from file.mimetype — that header
+// is client-supplied and trivially spoofed, so using it here would silently
+// undo the point of sniffing the buffer in the first place.
+export async function uploadImage(file: Express.Multer.File, sniffedExt: string): Promise<string> {
   if (env.cloudinary) {
     configureCloudinary();
     return new Promise((resolve, reject) => {
@@ -47,7 +42,7 @@ export async function uploadImage(file: Express.Multer.File): Promise<string> {
   }
 
   await mkdir(UPLOADS_DIR, { recursive: true });
-  const filename = `${randomUUID()}${extFromMime(file.mimetype)}`;
+  const filename = `${randomUUID()}.${sniffedExt}`;
   await writeFile(path.join(UPLOADS_DIR, filename), file.buffer);
   return `${env.appUrl}/uploads/${filename}`;
 }
