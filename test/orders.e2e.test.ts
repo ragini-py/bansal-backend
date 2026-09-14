@@ -17,6 +17,23 @@ function readJson(res: Response): Promise<any> {
   return res.json();
 }
 
+// Walks an order through a sequence of legal status transitions (the admin
+// PATCH endpoint now enforces a real state machine — see orders.service.ts's
+// ORDER_STATUS_TRANSITIONS — so tests that need an order in a later-pipeline
+// status can't just PATCH straight to it anymore).
+async function advanceOrderStatus(id: string, statuses: string[], token: string): Promise<Response> {
+  let res: Response;
+  do {
+    const next = statuses.shift()!;
+    res = await fetch(`${base}/api/orders/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ status: next }),
+    });
+  } while (statuses.length > 0 && res.ok);
+  return res;
+}
+
 // price/mrp are ignored by the server (re-derived from the live Product —
 // see orders.service.ts's createOrder) and are here only to keep the
 // request shape valid; assertions below check against the seeded product's
@@ -343,20 +360,29 @@ describe("orders (against a real MongoDB instance)", () => {
     const res = await fetch(`${base}/api/orders/${createdOrderId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
-      body: JSON.stringify({ status: "shipped" }),
+      body: JSON.stringify({ status: "processing" }),
     });
     assert.equal(res.status, 403);
   });
 
-  it("lets an admin patch an order's status", async () => {
+  it("lets an admin patch an order's status to the next legal step", async () => {
+    const res = await fetch(`${base}/api/orders/${createdOrderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ status: "processing" }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.order.status, "processing");
+  });
+
+  it("rejects an impossible status jump, e.g. skipping straight to shipped", async () => {
     const res = await fetch(`${base}/api/orders/${createdOrderId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
       body: JSON.stringify({ status: "shipped" }),
     });
-    const body = await readJson(res);
-    assert.equal(res.status, 200);
-    assert.equal(body.order.status, "shipped");
+    assert.equal(res.status, 409);
   });
 
   it("prevents a customer from requesting a return on someone else's order", async () => {
@@ -378,11 +404,15 @@ describe("orders (against a real MongoDB instance)", () => {
   });
 
   it("lets the owning customer request a return once the order is delivered", async () => {
-    await fetch(`${base}/api/orders/${createdOrderId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
-      body: JSON.stringify({ status: "delivered" }),
-    });
+    // createdOrderId is currently "processing" (see the transition tests
+    // above) — walk it through the rest of the legal pipeline to reach
+    // "delivered", since the state machine no longer allows jumping there.
+    const finalRes = await advanceOrderStatus(
+      createdOrderId,
+      ["packed", "ready_for_pickup", "shipped", "in_transit", "out_for_delivery", "delivered"],
+      adminToken,
+    );
+    assert.equal(finalRes.status, 200);
 
     const res = await fetch(`${base}/api/orders/${createdOrderId}/return`, {
       method: "POST",
@@ -393,6 +423,15 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 200);
     assert.equal(body.order.returnRequest.status, "requested");
     assert.equal(body.order.returnRequest.reason, "Not what I expected");
+  });
+
+  it("rejects moving a delivered order backward, e.g. delivered → packed", async () => {
+    const res = await fetch(`${base}/api/orders/${createdOrderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ status: "packed" }),
+    });
+    assert.equal(res.status, 409);
   });
 
   it("rejects a second return request while one is already in progress", async () => {
@@ -458,7 +497,7 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.ok(body.order.shipment.events.some((e: { status: string }) => e.status === "cancelled"));
   });
 
-  it("won't cancel an order that has already shipped", async () => {
+  it("won't cancel an order that's already been delivered", async () => {
     const res = await fetch(`${base}/api/orders/${createdOrderId}/cancel`, {
       method: "POST",
       headers: { Authorization: `Bearer ${customerToken}` },

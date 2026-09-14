@@ -5,6 +5,7 @@ import { clearCsrfCookie, setCsrfCookie } from "../../utils/csrf.js";
 import type { AccessTokenPayload } from "../../utils/jwt.js";
 import * as authService from "./auth.service.js";
 import type {
+  ChangePasswordInput,
   ForgotPasswordInput,
   LoginInput,
   RegisterInput,
@@ -78,5 +79,23 @@ export async function forgotPassword(req: Request, res: Response): Promise<void>
 
 export async function resetPassword(req: Request, res: Response): Promise<void> {
   await authService.resetPassword(req.body as ResetPasswordInput);
+  res.status(204).send();
+}
+
+// Revokes every session (including this one) — the client is expected to
+// treat this like a logout and re-authenticate with the new password.
+export async function changePassword(req: Request, res: Response): Promise<void> {
+  const { sub } = req.user as AccessTokenPayload;
+  await authService.changePassword(sub, req.body as ChangePasswordInput);
+  clearRefreshCookie(res);
+  clearCsrfCookie(res);
+  res.status(204).send();
+}
+
+export async function logoutAll(req: Request, res: Response): Promise<void> {
+  const { sub } = req.user as AccessTokenPayload;
+  await authService.revokeAllSessions(sub);
+  clearRefreshCookie(res);
+  clearCsrfCookie(res);
   res.status(204).send();
 }

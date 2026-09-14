@@ -92,6 +92,9 @@ export const env = {
     registerMax: isTest ? 10_000 : 5,
     forgotPasswordMax: isTest ? 10_000 : 5,
     resetPasswordMax: isTest ? 10_000 : 10,
+    // Authenticated, but still throttled — currentPassword is checked here,
+    // so an unthrottled loop would let a stolen access token brute-force it.
+    changePasswordMax: isTest ? 10_000 : 10,
     // Guest order tracking requires id + email together, but is still
     // unauthenticated — rate-limited to slow down brute-forcing that pair.
     trackOrderMax: isTest ? 10_000 : 20,

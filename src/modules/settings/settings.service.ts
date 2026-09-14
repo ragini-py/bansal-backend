@@ -1,8 +1,11 @@
+import { ConflictError } from "../../common/app-error.js";
 import { env } from "../../config/env.js";
+import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Settings, type SettingsDoc } from "./models/settings.model.js";
 import type { UpdateSettingsInput } from "./settings.schemas.js";
 
 export interface PublicSettings {
+  version: number;
   brandName: string;
   tagline: string;
   supportEmail: string;
@@ -33,6 +36,7 @@ async function getOrCreateSettings(): Promise<SettingsDoc> {
 
 function toPublicSettings(doc: SettingsDoc): PublicSettings {
   return {
+    version: doc.__v,
     brandName: doc.brandName,
     tagline: doc.tagline,
     supportEmail: doc.supportEmail,
@@ -56,11 +60,27 @@ export async function getSettings(): Promise<PublicSettings> {
   return toPublicSettings(await getOrCreateSettings());
 }
 
-export async function updateSettings(input: UpdateSettingsInput): Promise<PublicSettings> {
+export async function updateSettings(input: UpdateSettingsInput, actor: AuditActor): Promise<PublicSettings> {
   const doc = await getOrCreateSettings();
-  doc.set(input);
+  if (input.version !== undefined && input.version !== doc.__v) {
+    throw new ConflictError("Settings were changed by someone else. Please reload and try again.");
+  }
+  const before = toPublicSettings(doc);
+  const { version: _expectedVersion, ...fields } = input;
+  doc.set(fields);
   await doc.save();
-  return toPublicSettings(doc);
+  const after = toPublicSettings(doc);
+
+  await recordAudit({
+    actor,
+    action: "settings.updated",
+    entity: "settings",
+    entityId: doc._id.toString(),
+    before,
+    after,
+  });
+
+  return after;
 }
 
 // Used by orders.service.ts to price shipping/COD server-side — never the

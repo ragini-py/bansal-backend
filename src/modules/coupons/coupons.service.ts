@@ -1,4 +1,5 @@
 import { ConflictError, NotFoundError } from "../../common/app-error.js";
+import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Coupon, type CouponDoc } from "./models/coupon.model.js";
 import type { CreateCouponInput } from "./coupons.schemas.js";
 
@@ -44,15 +45,29 @@ export async function listCoupons(): Promise<PublicCoupon[]> {
   return docs.map(toPublicCoupon);
 }
 
-export async function createCoupon(input: CreateCouponInput): Promise<PublicCoupon> {
+export async function createCoupon(input: CreateCouponInput, actor: AuditActor): Promise<PublicCoupon> {
   const existing = await Coupon.findOne({ code: input.code.toUpperCase() });
   if (existing) throw new ConflictError("A coupon with this code already exists.");
 
   const doc = await Coupon.create(input);
+  await recordAudit({
+    actor,
+    action: "coupon.created",
+    entity: "coupon",
+    entityId: doc._id.toString(),
+    after: toPublicCoupon(doc),
+  });
   return toPublicCoupon(doc);
 }
 
-export async function deleteCoupon(id: string): Promise<void> {
+export async function deleteCoupon(id: string, actor: AuditActor): Promise<void> {
   const doc = await Coupon.findByIdAndDelete(id);
   if (!doc) throw new NotFoundError("Coupon not found.");
+  await recordAudit({
+    actor,
+    action: "coupon.deleted",
+    entity: "coupon",
+    entityId: id,
+    before: toPublicCoupon(doc),
+  });
 }

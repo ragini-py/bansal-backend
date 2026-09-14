@@ -4,8 +4,10 @@ import cookieParser from "cookie-parser";
 import cors from "cors";
 import express, { type Express } from "express";
 import helmet from "helmet";
+import mongoose from "mongoose";
 import morgan from "morgan";
 import { env } from "./config/env.js";
+import { requestId } from "./middleware/request-id.js";
 import { authRouter } from "./modules/auth/auth.routes.js";
 import { usersRouter } from "./modules/users/users.routes.js";
 import { catalogRouter } from "./modules/catalog/catalog.routes.js";
@@ -16,6 +18,7 @@ import { uploadsRouter } from "./modules/uploads/uploads.routes.js";
 import { settingsRouter } from "./modules/settings/settings.routes.js";
 import { contentRouter } from "./modules/content/content.routes.js";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes.js";
+import { auditRouter } from "./modules/audit/audit.routes.js";
 import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { sanitizeMongo } from "./middleware/sanitize-mongo.js";
@@ -23,6 +26,7 @@ import { sanitizeMongo } from "./middleware/sanitize-mongo.js";
 export function createApp(): Express {
   const app = express();
 
+  app.use(requestId);
   app.use(helmet());
   app.use(compression());
   app.use(morgan(env.isProduction ? "combined" : "dev"));
@@ -55,6 +59,15 @@ export function createApp(): Express {
     res.status(200).send("ok");
   });
 
+  // Readiness is distinct from liveness (/api/health above, which only
+  // proves the process is up): this actually checks the Mongo connection,
+  // so an orchestrator can hold traffic back during startup/reconnect
+  // instead of routing requests a disconnected DB would just fail anyway.
+  app.get("/api/ready", (_req, res) => {
+    const ready = mongoose.connection.readyState === 1;
+    res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not_ready" });
+  });
+
   // Local-disk upload fallback (see modules/uploads/uploads.service.ts) —
   // served cross-origin since the frontend runs on a different port.
   // Helmet's default same-origin resource policy would otherwise block the
@@ -78,6 +91,7 @@ export function createApp(): Express {
   app.use("/api/settings", settingsRouter);
   app.use("/api/content", contentRouter);
   app.use("/api/wishlist", wishlistRouter);
+  app.use("/api/audit-logs", auditRouter);
   app.use("/api", exampleRouter);
 
   app.use(notFoundHandler);

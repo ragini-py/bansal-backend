@@ -1,6 +1,13 @@
+import type { FilterQuery } from "mongoose";
 import { ConflictError, NotFoundError } from "../../common/app-error.js";
+import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Collection, Product, type CollectionDoc, type ProductDoc } from "./models/index.js";
-import type { CollectionInput, CreateProductInput, UpdateProductInput } from "./catalog.schemas.js";
+import type {
+  CollectionInput,
+  CreateProductInput,
+  ListProductsQuery,
+  UpdateProductInput,
+} from "./catalog.schemas.js";
 
 export interface PublicVariant {
   id: string;
@@ -11,6 +18,7 @@ export interface PublicVariant {
 
 export interface PublicProduct {
   id: string;
+  version: number;
   slug: string;
   name: string;
   price: number;
@@ -54,6 +62,7 @@ export interface PublicCollection {
 export function toPublicProduct(doc: ProductDoc): PublicProduct {
   return {
     id: doc._id.toString(),
+    version: doc.__v,
     slug: doc.slug,
     name: doc.name,
     price: doc.price,
@@ -99,9 +108,50 @@ export function toPublicCollection(doc: CollectionDoc): PublicCollection {
   };
 }
 
-export async function listProducts(): Promise<PublicProduct[]> {
-  const docs = await Product.find().sort({ createdAt: -1 });
-  return docs.map(toPublicProduct);
+export interface ProductPage {
+  products: PublicProduct[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// Escape regex metacharacters in free-text search input — this string goes
+// straight into a Mongo $regex, and an unescaped ".*" or similarly crafted
+// input could either match everything or (worst case) craft a pathological
+// backtracking pattern.
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Backward compatible by construction: with no page/limit in the query, this
+// returns the full (optionally filtered) result set exactly as before, so
+// every existing caller (the frontend's boot-time full-catalog fetch) keeps
+// working unchanged. page/limit are opt-in for a caller that wants real
+// pagination (e.g. an admin product table, or a future storefront rewrite)
+// instead of "fetch everything, filter client-side".
+export async function listProducts(query: ListProductsQuery = {}): Promise<ProductPage> {
+  const filter: FilterQuery<Record<string, unknown>> = {};
+  if (query.category) filter.category = query.category;
+  if (query.collection) filter.collections = query.collection;
+  if (query.published !== undefined) filter.published = query.published;
+  if (query.search?.trim()) {
+    const regex = new RegExp(escapeRegex(query.search.trim()), "i");
+    filter.$or = [{ name: regex }, { shortDescription: regex }, { category: regex }, { tags: regex }];
+  }
+
+  const total = await Product.countDocuments(filter);
+  let cursor = Product.find(filter).sort({ createdAt: -1 });
+
+  let page = 1;
+  let limit = total;
+  if (query.page !== undefined || query.limit !== undefined) {
+    limit = query.limit ?? 24;
+    page = query.page ?? 1;
+    cursor = cursor.skip((page - 1) * limit).limit(limit);
+  }
+
+  const docs = await cursor;
+  return { products: docs.map(toPublicProduct), total, page, limit };
 }
 
 export async function getProductBySlug(slug: string): Promise<PublicProduct> {
@@ -120,11 +170,17 @@ export async function createProduct(input: CreateProductInput): Promise<PublicPr
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<PublicProduct> {
   const doc = await Product.findById(id);
   if (!doc) throw new NotFoundError("Product not found.");
+  // Optimistic concurrency — only enforced when the caller sends the version
+  // it last read. Catches "admin A edits a product, admin B edits the same
+  // product from a stale copy, B's save silently overwrites A's change".
+  if (input.version !== undefined && input.version !== doc.__v) {
+    throw new ConflictError("This product was changed by someone else. Please reload and try again.");
+  }
   if (input.slug !== doc.slug) {
     const existing = await Product.findOne({ slug: input.slug });
     if (existing) throw new ConflictError("A product with this slug already exists.");
   }
-  const { variants, ...rest } = input;
+  const { variants, version: _expectedVersion, ...rest } = input;
   doc.set(rest);
   // Keep each existing variant's _id stable (it's referenced by carts,
   // wishlists, and past orders as variantId) — only variants with no `id`
@@ -137,9 +193,16 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   return toPublicProduct(doc);
 }
 
-export async function deleteProduct(id: string): Promise<void> {
+export async function deleteProduct(id: string, actor: AuditActor): Promise<void> {
   const doc = await Product.findByIdAndDelete(id);
   if (!doc) throw new NotFoundError("Product not found.");
+  await recordAudit({
+    actor,
+    action: "product.deleted",
+    entity: "product",
+    entityId: id,
+    before: toPublicProduct(doc),
+  });
 }
 
 export async function listCollections(): Promise<PublicCollection[]> {

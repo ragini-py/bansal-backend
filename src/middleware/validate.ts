@@ -11,3 +11,13 @@ export function validate(schema: ZodType) {
     next();
   };
 }
+
+// Same idea, for query strings (?page=1&limit=24&...) — kept separate from
+// `validate` because req.query is a different property with different
+// typing (ParsedQs), and coercing/parsing it needs its own assignment.
+export function validateQuery(schema: ZodType) {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    req.query = schema.parse(req.query) as typeof req.query;
+    next();
+  };
+}

@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { requestMeta } from "../../common/request-meta.js";
 import type { AccessTokenPayload } from "../../utils/jwt.js";
 import * as ordersService from "./orders.service.js";
 import type { CreateOrderInput, RequestReturnInput, UpdateOrderInput } from "./orders.schemas.js";
@@ -22,7 +23,11 @@ export async function listAll(_req: Request, res: Response): Promise<void> {
 }
 
 export async function update(req: Request<{ id: string }>, res: Response): Promise<void> {
-  const order = await ordersService.updateOrder(req.params.id, req.body as UpdateOrderInput);
+  const { sub } = req.user as AccessTokenPayload;
+  const order = await ordersService.updateOrder(req.params.id, req.body as UpdateOrderInput, {
+    id: sub,
+    ...requestMeta(req),
+  });
   res.json({ order });
 }
 
@@ -34,7 +39,7 @@ export async function requestReturn(req: Request<{ id: string }>, res: Response)
 
 export async function cancel(req: Request<{ id: string }>, res: Response): Promise<void> {
   const { sub } = req.user as AccessTokenPayload;
-  const order = await ordersService.cancelOrder(req.params.id, sub);
+  const order = await ordersService.cancelOrder(req.params.id, sub, { id: sub, ...requestMeta(req) });
   res.json({ order });
 }
 

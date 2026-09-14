@@ -5,7 +5,13 @@ import { comparePassword, hashPassword } from "../../utils/password.js";
 import { generateOpaqueToken, hashToken } from "../../utils/random-token.js";
 import { signAccessToken, type AccessTokenPayload } from "../../utils/jwt.js";
 import { PasswordResetToken, Session, User, type UserDoc } from "./models/index.js";
-import type { ForgotPasswordInput, LoginInput, RegisterInput, ResetPasswordInput } from "./auth.schemas.js";
+import type {
+  ChangePasswordInput,
+  ForgotPasswordInput,
+  LoginInput,
+  RegisterInput,
+  ResetPasswordInput,
+} from "./auth.schemas.js";
 
 export interface RequestMeta {
   ip?: string;
@@ -221,4 +227,29 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   // A password reset is a strong signal the old credential may have been
   // compromised — sign every other device out, same as a full logout.
   await Session.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
+}
+
+// Self-service password change (caller already authenticated) — distinct
+// from resetPassword above, which is for a caller who's locked out and using
+// an emailed token instead of their current password.
+export async function changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
+  const user = await User.findById(userId).select("+passwordHash");
+  if (!user) throw new UnauthorizedError("Account no longer exists.");
+  if (!(await comparePassword(input.currentPassword, user.passwordHash))) {
+    throw new UnauthorizedError("Current password is incorrect.");
+  }
+
+  user.passwordHash = await hashPassword(input.newPassword);
+  await user.save();
+
+  // Same reasoning as resetPassword: a password change is a strong signal
+  // to invalidate every existing session, including the one that made this
+  // request — the client re-authenticates with the new password afterward.
+  await Session.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
+}
+
+// Explicit "sign out everywhere" — revokes every live session for the
+// caller without requiring a password change.
+export async function revokeAllSessions(userId: string): Promise<void> {
+  await Session.updateMany({ userId, revokedAt: null }, { revokedAt: new Date() });
 }

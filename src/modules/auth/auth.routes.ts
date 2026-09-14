@@ -5,7 +5,13 @@ import { validate } from "../../middleware/validate.js";
 import { verifyCsrf } from "../../middleware/verify-csrf.js";
 import { env } from "../../config/env.js";
 import * as authController from "./auth.controller.js";
-import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "./auth.schemas.js";
+import {
+  changePasswordSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  registerSchema,
+  resetPasswordSchema,
+} from "./auth.schemas.js";
 
 export const authRouter = Router();
 
@@ -39,3 +45,12 @@ authRouter.post(
   validate(resetPasswordSchema),
   authController.resetPassword,
 );
+
+authRouter.post(
+  "/change-password",
+  authenticate,
+  limiter(env.rateLimit.changePasswordMax, 60 * 60 * 1000, "Too many attempts. Please try again later."),
+  validate(changePasswordSchema),
+  authController.changePassword,
+);
+authRouter.post("/logout-all", authenticate, authController.logoutAll);

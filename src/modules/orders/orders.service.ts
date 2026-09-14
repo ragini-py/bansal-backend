@@ -1,6 +1,7 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../../common/app-error.js";
 import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
+import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Product } from "../catalog/models/index.js";
 import { Coupon, type CouponDoc } from "../coupons/models/coupon.model.js";
 import { getPricingSettings } from "../settings/settings.service.js";
@@ -14,6 +15,7 @@ import type {
 
 export interface PublicOrder {
   id: string;
+  version: number;
   userId: string;
   customerName: string;
   email: string;
@@ -92,6 +94,7 @@ export function toPublicOrder(doc: OrderDoc): PublicOrder {
   const o = doc.toObject() as unknown as PlainOrder;
   return {
     id: doc._id.toString(),
+    version: doc.__v,
     userId: o.userId,
     customerName: o.customerName,
     email: o.email,
@@ -328,10 +331,28 @@ export async function listAllOrders(): Promise<PublicOrder[]> {
   return docs.map(toPublicOrder);
 }
 
-// Once an order reaches one of these, its fulfilment status can't change
-// further via the generic admin PATCH (returns are handled separately, via
-// returnRequest, and never touch `status`).
-const TERMINAL_ORDER_STATUSES = new Set(["delivered", "cancelled", "rto", "lost"]);
+// The fulfilment pipeline admin PATCH is allowed to move an order along —
+// anything not listed as a legal "next" status from the order's current one
+// is rejected (e.g. delivered → packed, or skipping straight from confirmed
+// to shipped). Terminal statuses (delivered/cancelled/rto/lost) map to an
+// empty array, so nothing can leave them via this endpoint — cancellation
+// and returns are separate, purpose-built endpoints/flows, not generic
+// status edits.
+const ORDER_STATUS_TRANSITIONS: Record<string, string[]> = {
+  confirmed: ["processing", "cancelled"],
+  processing: ["packed", "cancelled"],
+  packed: ["ready_for_pickup", "cancelled"],
+  ready_for_pickup: ["shipped", "cancelled"],
+  shipped: ["in_transit", "ndr", "rto", "lost"],
+  in_transit: ["out_for_delivery", "ndr", "rto", "lost"],
+  out_for_delivery: ["delivered", "delivery_failed", "ndr", "rto"],
+  delivery_failed: ["out_for_delivery", "rto"],
+  ndr: ["out_for_delivery", "rto"],
+  delivered: [],
+  cancelled: [],
+  rto: [],
+  lost: [],
+};
 
 // What a return can legally move to next — mirrors the pipeline implied by
 // the frontend's returnRequest.status union (requested → approved/rejected →
@@ -346,12 +367,33 @@ const RETURN_TRANSITIONS: Record<string, string[]> = {
   refund_completed: [],
 };
 
-export async function updateOrder(id: string, patch: UpdateOrderInput): Promise<PublicOrder> {
+export async function updateOrder(
+  id: string,
+  patch: UpdateOrderInput,
+  actor: AuditActor,
+): Promise<PublicOrder> {
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found.");
 
-  if (patch.status && patch.status !== doc.status && TERMINAL_ORDER_STATUSES.has(doc.status)) {
-    throw new ConflictError(`This order is already "${doc.status}" and can't be moved to another status.`);
+  // Optimistic concurrency — only enforced when the caller sends the
+  // version it last read (older/other clients that never send it keep
+  // working unchanged). Catches "two admins open the same order, the
+  // second save silently clobbers the first's change" — the read-modify-
+  // write gap here is normally seconds to minutes, far wider than Mongo's
+  // own within-request race window.
+  if (patch.version !== undefined && patch.version !== doc.__v) {
+    throw new ConflictError("This order was changed by someone else. Please reload and try again.");
+  }
+
+  const beforeStatus = doc.status;
+  const beforeRefundStatus = doc.payment.refundStatus;
+  const beforeRefundAmount = doc.payment.refundAmount;
+
+  if (patch.status && patch.status !== doc.status) {
+    const allowed = ORDER_STATUS_TRANSITIONS[doc.status] ?? [];
+    if (!allowed.includes(patch.status)) {
+      throw new ConflictError(`This order can't move from "${doc.status}" to "${patch.status}".`);
+    }
   }
 
   if (patch.returnRequest) {
@@ -372,8 +414,31 @@ export async function updateOrder(id: string, patch: UpdateOrderInput): Promise<
     }
   }
 
-  doc.set(patch);
+  const { version: _expectedVersion, ...fields } = patch;
+  doc.set(fields);
   await doc.save();
+
+  if (patch.status && patch.status !== beforeStatus) {
+    await recordAudit({
+      actor,
+      action: "order.status_changed",
+      entity: "order",
+      entityId: id,
+      before: { status: beforeStatus },
+      after: { status: doc.status },
+    });
+  }
+  if (doc.payment.refundStatus !== beforeRefundStatus) {
+    await recordAudit({
+      actor,
+      action: "order.refund_status_changed",
+      entity: "order",
+      entityId: id,
+      before: { refundStatus: beforeRefundStatus, refundAmount: beforeRefundAmount },
+      after: { refundStatus: doc.payment.refundStatus, refundAmount: doc.payment.refundAmount },
+    });
+  }
+
   return toPublicOrder(doc);
 }
 
@@ -407,7 +472,7 @@ export async function requestReturn(
 // cancellation depends on whether it was already paid.
 const CANCELLABLE_STATUSES = new Set(["confirmed", "processing", "packed", "ready_for_pickup"]);
 
-export async function cancelOrder(id: string, userId: string): Promise<PublicOrder> {
+export async function cancelOrder(id: string, userId: string, actor: AuditActor): Promise<PublicOrder> {
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found.");
   if (doc.userId !== userId) throw new ForbiddenError("This isn't your order.");
@@ -415,10 +480,23 @@ export async function cancelOrder(id: string, userId: string): Promise<PublicOrd
     throw new ConflictError("This order can no longer be cancelled.");
   }
 
+  const beforeStatus = doc.status;
+  const wasPaid = doc.payment.status === "paid";
+
   doc.status = "cancelled";
-  doc.payment.status = doc.payment.status === "paid" ? "refunded" : "cancelled";
+  doc.payment.status = wasPaid ? "refunded" : "cancelled";
   doc.shipment.events.push({ status: "cancelled", label: "Cancelled", at: new Date() });
   await doc.save();
+
+  await recordAudit({
+    actor,
+    action: "order.cancelled",
+    entity: "order",
+    entityId: id,
+    before: { status: beforeStatus, paymentStatus: wasPaid ? "paid" : doc.payment.status },
+    after: { status: doc.status, paymentStatus: doc.payment.status },
+  });
+
   return toPublicOrder(doc);
 }
 

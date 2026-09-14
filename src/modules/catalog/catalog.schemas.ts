@@ -36,6 +36,10 @@ export const updateProductSchema = z.object({
   bestseller: z.boolean(),
   newArrival: z.boolean(),
   published: z.boolean(),
+  // Optimistic-concurrency guard — the version the client last read (see
+  // catalog.service.ts's updateProduct). Optional so older/other callers
+  // that never send it keep working exactly as before.
+  version: z.number().int().min(0).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
@@ -43,6 +47,18 @@ export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 // Product" form sends the same full-object shape, just with no existing :id.
 export const createProductSchema = updateProductSchema;
 export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+// GET /products query params — all optional so an unparameterized request
+// keeps returning the full catalog (see catalog.service.ts's listProducts).
+export const listProductsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  category: z.string().trim().min(1).optional(),
+  collection: z.string().trim().min(1).optional(),
+  search: z.string().trim().min(1).optional(),
+  published: z.coerce.boolean().optional(),
+});
+export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
 
 export const collectionSchema = z.object({
   slug: z.string().trim().min(1),

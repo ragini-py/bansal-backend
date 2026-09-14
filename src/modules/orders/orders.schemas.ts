@@ -129,6 +129,10 @@ export const updateOrderSchema = z
     status: orderStatusEnum,
     shipment: shipmentSchema,
     returnRequest: returnRequestSchema.nullable(),
+    // Optimistic-concurrency guard — the version the client last read (see
+    // orders.service.ts's updateOrder). Optional so older/other callers that
+    // never send it keep working exactly as before.
+    version: z.number().int().min(0),
   })
   .partial();
 export type UpdateOrderInput = z.infer<typeof updateOrderSchema>;

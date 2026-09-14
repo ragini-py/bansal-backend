@@ -1,16 +1,23 @@
 import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
-import { validate } from "../../middleware/validate.js";
+import { validate, validateQuery } from "../../middleware/validate.js";
 import * as catalogController from "./catalog.controller.js";
-import { collectionSchema, createProductSchema, updateProductSchema } from "./catalog.schemas.js";
+import {
+  collectionSchema,
+  createProductSchema,
+  listProductsQuerySchema,
+  updateProductSchema,
+} from "./catalog.schemas.js";
 
 export const catalogRouter = Router();
 
-// Public reads — the storefront fetches the full catalog once and filters/
-// sorts client-side (see ProductsPage.tsx), matching the app's existing
-// single-fetch pattern rather than a paginated/filtered API.
-catalogRouter.get("/products", catalogController.listProducts);
+// Public reads. GET /products supports page/limit/category/collection/
+// search/published query params for a real server-side paginated/filtered
+// fetch — with none of them set, it still returns the full catalog (the
+// storefront's current single-fetch-then-client-filter pattern, see
+// ProductsPage.tsx, keeps working unchanged against the same endpoint).
+catalogRouter.get("/products", validateQuery(listProductsQuerySchema), catalogController.listProducts);
 catalogRouter.get("/products/:slug", catalogController.getProduct);
 catalogRouter.get("/collections", catalogController.listCollections);
 catalogRouter.get("/collections/:slug", catalogController.getCollection);

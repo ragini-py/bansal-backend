@@ -1,10 +1,17 @@
 import type { Request, Response } from "express";
+import { requestMeta } from "../../common/request-meta.js";
+import type { AccessTokenPayload } from "../../utils/jwt.js";
 import * as catalogService from "./catalog.service.js";
-import type { CollectionInput, CreateProductInput, UpdateProductInput } from "./catalog.schemas.js";
+import type {
+  CollectionInput,
+  CreateProductInput,
+  ListProductsQuery,
+  UpdateProductInput,
+} from "./catalog.schemas.js";
 
-export async function listProducts(_req: Request, res: Response): Promise<void> {
-  const products = await catalogService.listProducts();
-  res.json({ products });
+export async function listProducts(req: Request, res: Response): Promise<void> {
+  const page = await catalogService.listProducts(req.query as unknown as ListProductsQuery);
+  res.json(page);
 }
 
 export async function getProduct(req: Request<{ slug: string }>, res: Response): Promise<void> {
@@ -23,7 +30,8 @@ export async function updateProduct(req: Request<{ id: string }>, res: Response)
 }
 
 export async function deleteProduct(req: Request<{ id: string }>, res: Response): Promise<void> {
-  await catalogService.deleteProduct(req.params.id);
+  const { sub } = req.user as AccessTokenPayload;
+  await catalogService.deleteProduct(req.params.id, { id: sub, ...requestMeta(req) });
   res.status(204).send();
 }
 
