@@ -157,7 +157,7 @@ describe("auth flow (against a real MongoDB instance)", () => {
     });
     const { accessToken: customerToken } = await readJson(loginRes);
 
-    const blockedRes = await fetch(`${base}/api/protected/admin-ping`, {
+    const blockedRes = await fetch(`${base}/api/audit-logs`, {
       headers: { Authorization: `Bearer ${customerToken}` },
     });
     assert.equal(blockedRes.status, 403);
@@ -175,7 +175,7 @@ describe("auth flow (against a real MongoDB instance)", () => {
     });
     const { accessToken: adminToken } = await readJson(reLoginRes);
 
-    const allowedRes = await fetch(`${base}/api/protected/admin-ping`, {
+    const allowedRes = await fetch(`${base}/api/audit-logs`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     assert.equal(allowedRes.status, 200);

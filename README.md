@@ -44,7 +44,6 @@ needs to point at something real to actually boot.
 - `src/modules/content/` — one singleton `Content` document backing the homepage (announcement bar, hero, editorial/promo/story copy, section visibility, featured product/collection picks), public GET, admin-editable PATCH (see below)
 - `src/modules/coupons/` — `Coupon` model + public list, admin create/delete (matches AdminPage's CouponsManagerTab, which only creates and deletes — no edit-existing flow)
 - `src/modules/auth/models/password-reset-token.model.ts` — opaque + DB-backed (same pattern as the refresh token), native TTL index
-- `src/modules/example.routes.ts` — reference routes showing both access-control layers in use, and a template for future admin-only routes
 - `test/auth.e2e.test.ts`, `test/addresses.e2e.test.ts`, `test/catalog.e2e.test.ts`, `test/orders.e2e.test.ts`, `test/coupons.e2e.test.ts`, `test/password-reset.e2e.test.ts`, `test/admin-users.e2e.test.ts`, `test/cart.e2e.test.ts`, `test/uploads.e2e.test.ts`, `test/settings.e2e.test.ts`, `test/wishlist.e2e.test.ts`, `test/content.e2e.test.ts` — end-to-end against a real (in-memory) MongoDB instance
 - `test/rate-limit.test.ts` — the rate-limiter mechanism, tested in isolation with its own tiny Express app
 

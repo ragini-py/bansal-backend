@@ -19,7 +19,6 @@ import { settingsRouter } from "./modules/settings/settings.routes.js";
 import { contentRouter } from "./modules/content/content.routes.js";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes.js";
 import { auditRouter } from "./modules/audit/audit.routes.js";
-import { exampleRouter } from "./modules/example.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { sanitizeMongo } from "./middleware/sanitize-mongo.js";
 
@@ -92,7 +91,6 @@ export function createApp(): Express {
   app.use("/api/content", contentRouter);
   app.use("/api/wishlist", wishlistRouter);
   app.use("/api/audit-logs", auditRouter);
-  app.use("/api", exampleRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
