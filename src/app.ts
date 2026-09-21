@@ -67,17 +67,15 @@ export function createApp(): Express {
     res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not_ready" });
   });
 
-  // Local-disk upload fallback (see modules/uploads/uploads.service.ts) —
-  // served cross-origin since the frontend runs on a different port.
-  // Helmet's default same-origin resource policy would otherwise block the
-  // frontend from loading these images.
+  // Uploaded images live under public/images and are served cross-origin
+  // since the frontend runs on a different port.
   app.use(
-    "/uploads",
+    "/images",
     (_req, res, next) => {
       res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
       next();
     },
-    express.static(path.join(process.cwd(), "uploads")),
+    express.static(path.join(process.cwd(), "public", "images")),
   );
 
   app.use("/api/auth", authRouter);

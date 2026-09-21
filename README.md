@@ -38,7 +38,7 @@ needs to point at something real to actually boot.
 - `src/modules/orders/` — `Order` model (embedded lines/address/payment/shipment/returnRequest snapshot, matching the frontend's `Order` type exactly) + create/list/update/return/track endpoints (see below)
 - `src/modules/cart/` — one `Cart` document per user, full-replace GET/PUT (see below)
 - `src/modules/wishlist/` — one `Wishlist` document per user (`productIds: string[]`), full-replace GET/PUT, same pattern as cart
-- `src/modules/uploads/` — admin image upload, Cloudinary or local-disk fallback (see below)
+- `src/modules/uploads/` — admin image upload to local public image folders (see below)
 - `src/utils/email.ts` — transactional email, real SMTP or console-log fallback (see below)
 - `src/modules/settings/` — one singleton `Settings` document for the whole store, public GET, admin-editable PATCH for shipping/COD fields (see below)
 - `src/modules/content/` — one singleton `Content` document backing the homepage (announcement bar, hero, editorial/promo/story copy, section visibility, featured product/collection picks), public GET, admin-editable PATCH (see below)
@@ -164,11 +164,10 @@ Image uploads:
 |---|---|---|
 | `POST /api/uploads` | admin | multipart, field name `image`, 5MB limit, images only. Returns `{ url }` |
 
-No credentials configured yet (see `.env.example`'s `CLOUDINARY_*`) — files
-are written to `backend/uploads/` and served at `{APP_URL}/uploads/<file>`
-instead, so admin product/collection image upload works fully today with
-zero setup. Filling in all three `CLOUDINARY_*` values switches to
-Cloudinary automatically, no code changes — see `modules/uploads/uploads.service.ts`.
+Uploaded files are written to `backend/public/images/<folder>/` and served
+from the backend at `/images/<folder>/<file>`. The admin product and
+collection upload forms send `products` and `collections` respectively;
+unsupported folder names are rejected.
 
 Transactional email:
 
@@ -217,7 +216,7 @@ hide a section without deleting its copy.
 - **Lightweight NoSQL-injection guard** — `sanitizeMongo` (mounted globally in `app.ts`) strips any request body/params/query key starting with `$` or containing `.` before it reaches a route handler. Zod already blocks most of this today (a `z.string()` field rejects an object outright), but this is defense-in-depth for anything added later without strict validation.
 - **`GET /healthz`** — a bare-path alias for `GET /api/health`, for load balancers/orchestrators that probe `/healthz` by convention.
 
-Deliberately **not** addressed in this pass (each needs an infra or product decision first, not just code): CSRF protection for the refresh cookie, a Redis-backed rate limiter/blocklist for multi-instance deployments, Mongo multi-document transactions (needs a replica set), a secrets manager, and horizontal-scaling-safe local uploads (already mitigated by the existing Cloudinary fallback — force it in any multi-instance deployment).
+Deliberately **not** addressed in this pass (each needs an infra or product decision first, not just code): CSRF protection for the refresh cookie, a Redis-backed rate limiter/blocklist for multi-instance deployments, Mongo multi-document transactions (needs a replica set), a secrets manager, and horizontal-scaling-safe local uploads.
 
 ## Scope of this pass — what's deliberately not here yet
 

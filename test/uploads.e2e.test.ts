@@ -78,13 +78,14 @@ after(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await disconnectDb();
   await mongod.stop();
-  await rm(path.join(process.cwd(), "uploads"), { recursive: true, force: true });
+  await rm(path.join(process.cwd(), "public", "images"), { recursive: true, force: true });
 });
 
-describe("uploads (local-disk fallback, no Cloudinary configured)", () => {
+describe("uploads (local public storage)", () => {
   it("rejects an unauthenticated upload", async () => {
     const form = new FormData();
     form.append("image", tinyPngBlob(), "test.png");
+    form.append("folder", "products");
     const res = await fetch(`${base}/api/uploads`, { method: "POST", body: form });
     assert.equal(res.status, 401);
   });
@@ -135,9 +136,9 @@ describe("uploads (local-disk fallback, no Cloudinary configured)", () => {
     });
     const body = await readJson(res);
     assert.equal(res.status, 201);
-    assert.ok(body.url.startsWith("http://localhost:4000/uploads/"));
+    assert.ok(body.url.startsWith("/images/products/"));
 
-    const fileRes = await fetch(`${base}${new URL(body.url).pathname}`);
+    const fileRes = await fetch(`${base}${body.url}`);
     assert.equal(fileRes.status, 200);
     assert.equal(fileRes.headers.get("cross-origin-resource-policy"), "cross-origin");
   });
