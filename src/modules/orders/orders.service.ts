@@ -3,15 +3,11 @@ import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
 import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Product } from "../catalog/models/index.js";
-import { Coupon, type CouponDoc } from "../coupons/models/coupon.model.js";
+import { priceCoupon } from "../coupons/coupons.service.js";
+import { Coupon } from "../coupons/models/coupon.model.js";
 import { getPricingSettings } from "../settings/settings.service.js";
 import { Order, type OrderDoc } from "./models/order.model.js";
-import type {
-  CreateOrderInput,
-  CreateOrderLineInput,
-  RequestReturnInput,
-  UpdateOrderInput,
-} from "./orders.schemas.js";
+import type { CreateOrderInput, RequestReturnInput, UpdateOrderInput } from "./orders.schemas.js";
 
 export interface PublicOrder {
   id: string;
@@ -119,59 +115,6 @@ export function toPublicOrder(doc: OrderDoc): PublicOrder {
       ? { ...o.returnRequest, requestedAt: o.returnRequest.requestedAt.toISOString() }
       : null,
   };
-}
-
-// Coupon eligibility and discount math re-derived server-side — the
-// frontend's applyCoupon() does the same checks for instant UI feedback,
-// but only this copy is ever trusted for the actual charge.
-async function priceCoupon(
-  code: string,
-  userId: string,
-  subtotal: number,
-  lines: CreateOrderLineInput[],
-): Promise<{ couponCode: string; discount: number }> {
-  const coupon = await Coupon.findOne({ code: code.trim().toUpperCase() });
-  if (!coupon) throw new ConflictError("That coupon code is no longer valid.");
-
-  const now = new Date();
-  if (!coupon.active) throw new ConflictError("That coupon is no longer active.");
-  if (now < coupon.startsAt || now > coupon.expiresAt) {
-    throw new ConflictError("That coupon isn't valid right now.");
-  }
-  if (subtotal < coupon.minOrder) {
-    throw new ConflictError("This order no longer meets that coupon's minimum order value.");
-  }
-  if (coupon.usageLimit != null && coupon.timesUsed >= coupon.usageLimit) {
-    throw new ConflictError("This coupon has reached its usage limit.");
-  }
-  if (coupon.perUserLimit != null) {
-    const usedByUser = await Order.countDocuments({ userId, couponCode: coupon.code });
-    if (usedByUser >= coupon.perUserLimit) {
-      throw new ConflictError("You've already used this coupon the maximum number of times.");
-    }
-  }
-  if (coupon.newCustomerOnly) {
-    const hasOrders = await Order.exists({ userId });
-    if (hasOrders) throw new ConflictError("This coupon is only valid for new customers.");
-  }
-  if (coupon.restrictedCollections.length > 0) {
-    const eligible = await Product.countDocuments({
-      _id: { $in: lines.map((l) => l.productId) },
-      collections: { $in: coupon.restrictedCollections },
-    });
-    if (eligible === 0) {
-      throw new ConflictError("This coupon doesn't apply to the items in your cart.");
-    }
-  }
-
-  return { couponCode: coupon.code, discount: computeDiscount(coupon, subtotal) };
-}
-
-function computeDiscount(coupon: CouponDoc, subtotal: number): number {
-  let discount =
-    coupon.type === "percent" ? Math.round((subtotal * coupon.value) / 100) : coupon.value;
-  if (coupon.maxDiscount) discount = Math.min(discount, coupon.maxDiscount);
-  return Math.min(discount, subtotal);
 }
 
 export async function createOrder(

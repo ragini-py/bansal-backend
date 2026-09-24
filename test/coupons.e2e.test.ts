@@ -9,6 +9,7 @@ let base: string;
 let disconnectDb: () => Promise<void>;
 let customerToken: string;
 let adminToken: string;
+let productId: string;
 
 function readJson(res: Response): Promise<any> {
   return res.json();
@@ -27,6 +28,7 @@ function buildCouponInput(overrides: Record<string, unknown> = {}) {
     perUserLimit: 1,
     newCustomerOnly: false,
     restrictedCollections: [],
+    isPublic: true,
     active: true,
     ...overrides,
   };
@@ -69,6 +71,21 @@ before(async () => {
     role: "admin",
   });
 
+  const { Product } = await import("../src/modules/catalog/models/index.js");
+  const product = await Product.create({
+    name: "Test Lehenga",
+    slug: "test-lehenga-coupons",
+    price: 3000,
+    mrp: 4000,
+    images: ["https://example.com/a.jpg"],
+    category: "lehenga",
+    collections: [],
+    shortDescription: "test",
+    description: "test",
+    variants: [{ size: "M", colour: "Red", availability: "available" }],
+  });
+  productId = product._id.toString();
+
   async function login(email: string): Promise<string> {
     const res = await fetch(`${base}/api/auth/login`, {
       method: "POST",
@@ -89,8 +106,29 @@ after(async () => {
 });
 
 describe("coupons (against a real MongoDB instance)", () => {
-  it("lists coupons publicly, without auth", async () => {
+  it("rejects the full coupon listing from an unauthenticated caller", async () => {
     const res = await fetch(`${base}/api/coupons`);
+    assert.equal(res.status, 401);
+  });
+
+  it("rejects the full coupon listing from a non-admin customer", async () => {
+    const res = await fetch(`${base}/api/coupons`, {
+      headers: { Authorization: `Bearer ${customerToken}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it("lets an admin list all coupons", async () => {
+    const res = await fetch(`${base}/api/coupons`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(body.coupons));
+  });
+
+  it("the public listing works without auth and starts empty", async () => {
+    const res = await fetch(`${base}/api/coupons/public`);
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.coupons));
@@ -133,6 +171,7 @@ describe("coupons (against a real MongoDB instance)", () => {
     assert.equal(res.status, 201);
     assert.equal(body.coupon.code, "WELCOME15");
     assert.equal(body.coupon.timesUsed, 0);
+    assert.equal(body.coupon.isPublic, true);
   });
 
   it("rejects a duplicate coupon code", async () => {
@@ -144,14 +183,72 @@ describe("coupons (against a real MongoDB instance)", () => {
     assert.equal(res.status, 409);
   });
 
-  it("the new coupon shows up in the public list", async () => {
-    const res = await fetch(`${base}/api/coupons`);
+  it("the new public coupon shows up in the public list", async () => {
+    const res = await fetch(`${base}/api/coupons/public`);
     const body = await readJson(res);
     assert.ok(body.coupons.some((c: { code: string }) => c.code === "WELCOME15"));
   });
 
+  it("a coupon created with isPublic: false is hidden from the public list", async () => {
+    await fetch(`${base}/api/coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(buildCouponInput({ code: "HIDDEN10", value: 10, isPublic: false })),
+    });
+    const res = await fetch(`${base}/api/coupons/public`);
+    const body = await readJson(res);
+    assert.ok(!body.coupons.some((c: { code: string }) => c.code === "HIDDEN10"));
+  });
+
+  it("rejects coupon validation from an unauthenticated caller", async () => {
+    const res = await fetch(`${base}/api/coupons/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "WELCOME15", lines: [{ productId, quantity: 1 }] }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  it("validates an eligible coupon and computes the discount server-side, ignoring the hidden code being unlisted", async () => {
+    const res = await fetch(`${base}/api/coupons/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ code: "HIDDEN10", lines: [{ productId, quantity: 1 }] }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.couponCode, "HIDDEN10");
+    assert.equal(body.subtotal, 3000);
+    assert.equal(body.discount, 300);
+  });
+
+  it("rejects validation for a cart below the coupon's minimum order", async () => {
+    await fetch(`${base}/api/coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(buildCouponInput({ code: "BIGSPEND", minOrder: 100000 })),
+    });
+    const res = await fetch(`${base}/api/coupons/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ code: "BIGSPEND", lines: [{ productId, quantity: 1 }] }),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("rejects validation for an unknown code", async () => {
+    const res = await fetch(`${base}/api/coupons/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({ code: "NOPE", lines: [{ productId, quantity: 1 }] }),
+    });
+    assert.equal(res.status, 409);
+  });
+
   it("rejects deletion from a non-admin customer", async () => {
-    const listRes = await fetch(`${base}/api/coupons`);
+    const listRes = await fetch(`${base}/api/coupons`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
     const { coupons } = await readJson(listRes);
     const id = coupons[0].id;
 
@@ -163,7 +260,9 @@ describe("coupons (against a real MongoDB instance)", () => {
   });
 
   it("lets an admin delete a coupon", async () => {
-    const listRes = await fetch(`${base}/api/coupons`);
+    const listRes = await fetch(`${base}/api/coupons`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
     const { coupons } = await readJson(listRes);
     const id = coupons[0].id;
 
@@ -173,7 +272,9 @@ describe("coupons (against a real MongoDB instance)", () => {
     });
     assert.equal(res.status, 204);
 
-    const afterRes = await fetch(`${base}/api/coupons`);
+    const afterRes = await fetch(`${base}/api/coupons`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
     const { coupons: after } = await readJson(afterRes);
     assert.ok(!after.some((c: { id: string }) => c.id === id));
   });
