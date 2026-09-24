@@ -15,14 +15,6 @@ const schema = z.object({
   // in staging/prod.
   APP_URL: z.string().min(1),
 
-  // Image storage — optional. Unset means "not configured yet": uploads
-  // fall back to local disk (see modules/uploads) so the feature works out
-  // of the box in dev; set all three to switch to Cloudinary with zero
-  // code changes.
-  CLOUDINARY_CLOUD_NAME: z.string().optional(),
-  CLOUDINARY_API_KEY: z.string().optional(),
-  CLOUDINARY_API_SECRET: z.string().optional(),
-
   // Transactional email — optional. Unset means emails are logged to the
   // console instead of sent (see utils/email.ts); set all of these to
   // switch to real delivery through any SMTP provider (Postmark, SES,
@@ -62,14 +54,6 @@ export const env = {
   },
   refreshTokenTtlMs: parsed.data.REFRESH_TOKEN_TTL_MS,
   passwordResetTtlMs: parsed.data.PASSWORD_RESET_TTL_MS,
-  cloudinary:
-    parsed.data.CLOUDINARY_CLOUD_NAME && parsed.data.CLOUDINARY_API_KEY && parsed.data.CLOUDINARY_API_SECRET
-      ? {
-          cloudName: parsed.data.CLOUDINARY_CLOUD_NAME,
-          apiKey: parsed.data.CLOUDINARY_API_KEY,
-          apiSecret: parsed.data.CLOUDINARY_API_SECRET,
-        }
-      : null,
   smtp:
     parsed.data.SMTP_HOST && parsed.data.SMTP_USER && parsed.data.SMTP_PASS
       ? {
