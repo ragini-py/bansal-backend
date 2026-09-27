@@ -10,6 +10,7 @@ export const settingsRouter = Router();
 // Public — Footer/ContactPage/ShippingPage/TermsPage etc. all read store
 // config (brand name, support contact, shipping policy) without signing in.
 settingsRouter.get("/", settingsController.get);
+settingsRouter.get("/check-pincode", settingsController.checkPincode);
 settingsRouter.patch(
   "/",
   authenticate,

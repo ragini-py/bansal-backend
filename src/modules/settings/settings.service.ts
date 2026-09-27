@@ -4,6 +4,15 @@ import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { Settings, type SettingsDoc } from "./models/settings.model.js";
 import type { UpdateSettingsInput } from "./settings.schemas.js";
 
+export interface PincodeCheckResult {
+  provider: "shiprocket";
+  mode: "demo" | "live";
+  available: boolean;
+  pincode: string;
+  pickupPincode: string;
+  message: string;
+}
+
 export interface PublicSettings {
   version: number;
   brandName: string;
@@ -77,6 +86,99 @@ function toPublicSettings(doc: SettingsDoc): PublicSettings {
 
 export async function getSettings(): Promise<PublicSettings> {
   return toPublicSettings(await getOrCreateSettings());
+}
+
+export async function checkPincodeAvailability(pincode: string): Promise<PincodeCheckResult> {
+  const normalized = pincode.replace(/\D/g, "").trim();
+  if (!normalized || normalized.length < 4) {
+    return {
+      provider: "shiprocket",
+      mode: "demo",
+      available: false,
+      pincode: normalized,
+      pickupPincode: env.shiprocket.pickupPincode,
+      message: "Please enter a valid Indian pincode to check shipping availability.",
+    };
+  }
+
+  const isDemo =
+    !env.shiprocket.email ||
+    /demo|example|replace/i.test(env.shiprocket.email) ||
+    !env.shiprocket.password ||
+    /demo|example|replace/i.test(env.shiprocket.password);
+
+  if (isDemo) {
+    const demoAvailable = ["700019", "700001", "700016", "700020", "110001", "560001"].includes(normalized);
+    return {
+      provider: "shiprocket",
+      mode: "demo",
+      available: demoAvailable,
+      pincode: normalized,
+      pickupPincode: env.shiprocket.pickupPincode,
+      message: demoAvailable
+        ? "Shipping is available to this pincode in demo mode. Replace Shiprocket credentials in env to go live."
+        : "This pincode is not serviceable in demo mode. Replace Shiprocket credentials in env to go live.",
+    };
+  }
+
+  try {
+    const loginRes = await fetch(`${env.shiprocket.baseUrl.replace(/\/$/, "")}/v1/external/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: env.shiprocket.email, password: env.shiprocket.password }),
+    });
+
+    if (!loginRes.ok) {
+      throw new Error(`Shiprocket login failed with ${loginRes.status}`);
+    }
+
+    const loginBody = (await loginRes.json()) as { token?: string; data?: { token?: string } };
+    const token = loginBody.token ?? loginBody.data?.token;
+    if (!token) {
+      throw new Error("Shiprocket login response did not include a token.");
+    }
+
+    const serviceRes = await fetch(`${env.shiprocket.baseUrl.replace(/\/$/, "")}/v1/external/courier/serviceability`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        pickup_postcode: env.shiprocket.pickupPincode,
+        delivery_postcode: normalized,
+        cod: 0,
+        weight: 0.5,
+      }),
+    });
+
+    const serviceBody = (await serviceRes.json()) as {
+      status?: string;
+      data?: { available?: boolean; courier_company?: string[]; response?: string[] };
+    };
+
+    const available = serviceRes.ok && (serviceBody.data?.available ?? true);
+    return {
+      provider: "shiprocket",
+      mode: "live",
+      available,
+      pincode: normalized,
+      pickupPincode: env.shiprocket.pickupPincode,
+      message: available
+        ? "This pincode is serviceable by Shiprocket."
+        : "This pincode is not currently serviceable by Shiprocket.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return {
+      provider: "shiprocket",
+      mode: "demo",
+      available: false,
+      pincode: normalized,
+      pickupPincode: env.shiprocket.pickupPincode,
+      message: `Shiprocket check failed. Falling back to demo mode (${message}).`,
+    };
+  }
 }
 
 export async function updateSettings(input: UpdateSettingsInput, actor: AuditActor): Promise<PublicSettings> {

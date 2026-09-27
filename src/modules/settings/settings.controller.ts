@@ -9,6 +9,12 @@ export async function get(_req: Request, res: Response): Promise<void> {
   res.json({ settings });
 }
 
+export async function checkPincode(req: Request, res: Response): Promise<void> {
+  const pincode = String(req.query.pincode ?? "").trim();
+  const result = await settingsService.checkPincodeAvailability(pincode);
+  res.json(result);
+}
+
 export async function update(req: Request, res: Response): Promise<void> {
   const { sub } = req.user as AccessTokenPayload;
   const settings = await settingsService.updateSettings(req.body as UpdateSettingsInput, {

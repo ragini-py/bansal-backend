@@ -155,4 +155,13 @@ describe("settings (against a real MongoDB instance)", () => {
     assert.equal(body.settings.shippingFee, 250);
     assert.equal(body.settings.brandName, "Bansal-nx");
   });
+
+  it("returns a safe demo pincode availability result for shipping checks", async () => {
+    const res = await fetch(`${base}/api/settings/check-pincode?pincode=700019`);
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.available, true);
+    assert.equal(body.provider, "shiprocket");
+    assert.equal(body.mode, "demo");
+  });
 });

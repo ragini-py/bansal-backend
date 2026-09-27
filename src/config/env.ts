@@ -14,6 +14,13 @@ const schema = z.object({
   // rather than silently falling back to a dev value that would be wrong
   // in staging/prod.
   APP_URL: z.string().min(1),
+  RAZORPAY_KEY_ID: z.string().default("rzp_test_dummy_key_id"),
+  RAZORPAY_KEY_SECRET: z.string().default("dummy_razorpay_secret"),
+  RAZORPAY_WEBHOOK_SECRET: z.string().default("dummy_razorpay_webhook_secret"),
+  SHIPROCKET_BASE_URL: z.string().default("https://apiv2.shiprocket.in"),
+  SHIPROCKET_EMAIL: z.string().default("demo@shiprocket.local"),
+  SHIPROCKET_PASSWORD: z.string().default("demo-shiprocket-password"),
+  SHIPROCKET_PICKUP_PINCODE: z.string().default("700001"),
 
   // Transactional email — optional. Unset means emails are logged to the
   // console instead of sent (see utils/email.ts); set all of these to
@@ -59,16 +66,27 @@ export const env = {
   },
   refreshTokenTtlMs: parsed.data.REFRESH_TOKEN_TTL_MS,
   passwordResetTtlMs: parsed.data.PASSWORD_RESET_TTL_MS,
+  razorpay: {
+    keyId: parsed.data.RAZORPAY_KEY_ID,
+    keySecret: parsed.data.RAZORPAY_KEY_SECRET,
+    webhookSecret: parsed.data.RAZORPAY_WEBHOOK_SECRET,
+  },
+  shiprocket: {
+    baseUrl: parsed.data.SHIPROCKET_BASE_URL,
+    email: parsed.data.SHIPROCKET_EMAIL,
+    password: parsed.data.SHIPROCKET_PASSWORD,
+    pickupPincode: parsed.data.SHIPROCKET_PICKUP_PINCODE,
+  },
   smtp:
     parsed.data.SMTP_HOST && parsed.data.SMTP_USER && parsed.data.SMTP_PASS
       ? {
-          host: parsed.data.SMTP_HOST,
-          port: parsed.data.SMTP_PORT ?? 587,
-          secure: parsed.data.SMTP_SECURE ?? false,
-          user: parsed.data.SMTP_USER,
-          pass: parsed.data.SMTP_PASS,
-          from: parsed.data.EMAIL_FROM ?? parsed.data.SMTP_USER,
-        }
+        host: parsed.data.SMTP_HOST,
+        port: parsed.data.SMTP_PORT ?? 587,
+        secure: parsed.data.SMTP_SECURE ?? false,
+        user: parsed.data.SMTP_USER,
+        pass: parsed.data.SMTP_PASS,
+        from: parsed.data.EMAIL_FROM ?? parsed.data.SMTP_USER,
+      }
       : null,
   // Real limits in dev/prod. In test, a single process runs many unrelated
   // functional tests against the same login/register routes in sequence —
