@@ -17,26 +17,37 @@ function readJson(res: Response): Promise<any> {
 
 const productInput = {
   slug: "test-silk-saree",
+  productCode: "BNS-TS-001",
+  styleNumber: "BS-001",
+  dressName: "Test Silk Saree",
   name: "Test Silk Saree",
+  material: "Silk",
+  clothMaterial: "Raw Silk",
   price: 10000,
   mrp: 12000,
+  discountedPrice: 9000,
+  discountPercentage: 10,
+  quantity: 15,
   currency: "INR" as const,
   images: ["/products/test.jpg"],
   category: "Sarees",
-  collections: [],
-  tags: ["silk"],
+  collections: ["test-collection"],
+  tags: ["silk", "wedding"],
   badge: null,
   shortDescription: "A test saree.",
   description: "A test saree used for e2e coverage.",
   details: ["Test detail"],
   care: ["Dry clean only"],
-  sizes: ["Free Size"],
-  colours: ["Gold"],
+  sizes: ["Free Size", "M"],
+  colours: ["Gold", "Ivory"],
+  availableSizes: ["Free Size", "M"],
+  colorOptions: ["Gold", "Ivory"],
+  additionalComment: "Great for festive occasions.",
   variants: [{ size: "Free Size", colour: "Gold", availability: "available" as const }],
   featured: false,
-  bestseller: false,
-  newArrival: false,
-  published: false,
+  bestseller: true,
+  newArrival: true,
+  published: true,
 };
 
 before(async () => {
@@ -115,6 +126,55 @@ describe("catalog (against a real MongoDB instance)", () => {
     assert.equal(body.product.name, "Test Silk Saree");
     assert.equal(body.product.variants.length, 1);
     assert.ok(body.product.variants[0].id);
+  });
+
+  it("supports backend search, filter, sort, and pagination across spreadsheet fields", async () => {
+    const createRes = await fetch(`${base}/api/products`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({
+        ...productInput,
+        slug: "test-ganesha-ensemble",
+        dressName: "Ganesha Ensemble",
+        category: "Lehengas",
+        material: "Cotton",
+        clothMaterial: "Cotton Blend",
+        price: 18000,
+        mrp: 24000,
+        discountedPrice: 15000,
+        discountPercentage: 37,
+        quantity: 8,
+        sizes: ["S", "M", "L"],
+        colours: ["Peach", "Cream"],
+        availableSizes: ["S", "M", "L"],
+        colorOptions: ["Peach", "Cream"],
+        tags: ["festive", "cotton"],
+        badge: "new",
+        bestseller: false,
+        newArrival: true,
+        published: true,
+        collections: ["festive-edit"],
+        additionalComment: "Perfect for festive gifting.",
+      }),
+    });
+    assert.equal(createRes.status, 201);
+
+    const searchRes = await fetch(
+      `${base}/api/products?search=festive&category=Lehengas&color=Peach&size=M&minPrice=12000&sort=price_asc&page=1&limit=10`,
+    );
+    const searchBody = await readJson(searchRes);
+
+    assert.equal(searchRes.status, 200);
+    assert.equal(searchBody.page, 1);
+    assert.equal(searchBody.limit, 10);
+    assert.equal(searchBody.total >= 1, true);
+    assert.ok(searchBody.products.some((p: { slug: string }) => p.slug === "test-ganesha-ensemble"));
+
+    const filterRes = await fetch(`${base}/api/products?material=Cotton&badge=new&sort=discount_desc`);
+    const filterBody = await readJson(filterRes);
+    assert.equal(filterRes.status, 200);
+    assert.ok(filterBody.products.some((p: { badge: string | null }) => p.badge === "new"));
+    assert.ok(filterBody.products[0].discountPercentage >= filterBody.products.at(-1).discountPercentage);
   });
 
   it("404s for an unknown product slug", async () => {

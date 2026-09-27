@@ -16,9 +16,17 @@ export const variantSchema = z.object({
 
 export const updateProductSchema = z.object({
   slug: z.string().trim().min(1),
+  productCode: z.string().trim().min(1).optional(),
+  styleNumber: z.string().trim().min(1).optional(),
+  dressName: z.string().trim().min(1).optional(),
   name: z.string().trim().min(1),
+  material: z.string().trim().min(1).optional(),
+  clothMaterial: z.string().trim().min(1).optional(),
   price: z.number().min(0),
   mrp: z.number().min(0),
+  discountedPrice: z.number().min(0).optional(),
+  discountPercentage: z.number().min(0).max(100).optional(),
+  quantity: z.number().int().min(0).optional(),
   currency: z.literal("INR"),
   images: z.array(z.string().trim().min(1)),
   category: z.string().trim().min(1),
@@ -31,6 +39,9 @@ export const updateProductSchema = z.object({
   care: z.array(z.string().trim()),
   sizes: z.array(z.string().trim()),
   colours: z.array(z.string().trim()),
+  availableSizes: z.array(z.string().trim()).optional(),
+  colorOptions: z.array(z.string().trim()).optional(),
+  additionalComment: z.string().trim().optional(),
   variants: z.array(variantSchema),
   featured: z.boolean(),
   bestseller: z.boolean(),
@@ -57,6 +68,22 @@ export const listProductsQuerySchema = z.object({
   collection: z.string().trim().min(1).optional(),
   search: z.string().trim().min(1).optional(),
   published: z.coerce.boolean().optional(),
+  material: z.string().trim().min(1).optional(),
+  clothMaterial: z.string().trim().min(1).optional(),
+  color: z.string().trim().min(1).optional(),
+  size: z.string().trim().min(1).optional(),
+  minPrice: z.coerce.number().min(0).optional(),
+  maxPrice: z.coerce.number().min(0).optional(),
+  minDiscount: z.coerce.number().min(0).max(100).optional(),
+  maxDiscount: z.coerce.number().min(0).max(100).optional(),
+  badge: z.enum(["new", "bestseller", "exclusive"]).optional(),
+  featured: z.coerce.boolean().optional(),
+  bestseller: z.coerce.boolean().optional(),
+  newArrival: z.coerce.boolean().optional(),
+  tag: z.string().trim().min(1).optional(),
+  sort: z
+    .enum(["newest", "price_asc", "price_desc", "discount_desc", "name_asc", "name_desc", "featured_first", "bestseller_first"])
+    .optional(),
 });
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
 

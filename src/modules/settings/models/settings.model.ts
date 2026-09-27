@@ -21,6 +21,10 @@ const settingsSchema = new Schema(
     codMaxOrderValue: { type: Number, default: 50000 },
     delhiveryConnected: { type: Boolean, default: false },
     allowGuestBrowsing: { type: Boolean, default: true },
+    catalogMaterials: { type: [String], default: [] },
+    catalogColors: { type: [String], default: [] },
+    catalogSizes: { type: [String], default: [] },
+    catalogCategories: { type: [String], default: [] },
   },
   { timestamps: false },
 );

@@ -20,6 +20,10 @@ export interface PublicSettings {
   delhiveryConnected: boolean;
   emailProviderConnected: boolean;
   allowGuestBrowsing: boolean;
+  catalogMaterials: string[];
+  catalogColors: string[];
+  catalogSizes: string[];
+  catalogCategories: string[];
 }
 
 // There's exactly one settings document — find it, or create it with schema
@@ -31,6 +35,17 @@ async function getOrCreateSettings(): Promise<SettingsDoc> {
     { singleton: true },
     { $setOnInsert: { singleton: true } },
     { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+}
+
+function normalizeCatalogEnumValues(values: string[] = []): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()),
+    ),
   );
 }
 
@@ -53,6 +68,10 @@ function toPublicSettings(doc: SettingsDoc): PublicSettings {
     // configured (see src/utils/email.ts), not an editable flag.
     emailProviderConnected: env.smtp !== null,
     allowGuestBrowsing: doc.allowGuestBrowsing,
+    catalogMaterials: normalizeCatalogEnumValues(doc.catalogMaterials),
+    catalogColors: normalizeCatalogEnumValues(doc.catalogColors),
+    catalogSizes: normalizeCatalogEnumValues(doc.catalogSizes),
+    catalogCategories: normalizeCatalogEnumValues(doc.catalogCategories),
   };
 }
 
@@ -67,7 +86,18 @@ export async function updateSettings(input: UpdateSettingsInput, actor: AuditAct
   }
   const before = toPublicSettings(doc);
   const { version: _expectedVersion, ...fields } = input;
-  doc.set(fields);
+
+  if (fields.catalogMaterials) doc.set("catalogMaterials", normalizeCatalogEnumValues(fields.catalogMaterials));
+  if (fields.catalogColors) doc.set("catalogColors", normalizeCatalogEnumValues(fields.catalogColors));
+  if (fields.catalogSizes) doc.set("catalogSizes", normalizeCatalogEnumValues(fields.catalogSizes));
+  if (fields.catalogCategories) doc.set("catalogCategories", normalizeCatalogEnumValues(fields.catalogCategories));
+
+  const remainingFields = Object.fromEntries(
+    Object.entries(fields).filter(
+      ([key]) => !["catalogMaterials", "catalogColors", "catalogSizes", "catalogCategories"].includes(key),
+    ),
+  );
+  doc.set(remainingFields);
   await doc.save();
   const after = toPublicSettings(doc);
 

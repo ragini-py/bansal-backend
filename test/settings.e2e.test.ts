@@ -125,6 +125,25 @@ describe("settings (against a real MongoDB instance)", () => {
     assert.equal(getBody.settings.freeShippingThreshold, 10000);
   });
 
+  it("stores and deduplicates admin-managed catalog enums", async () => {
+    const res = await fetch(`${base}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({
+        catalogMaterials: ["Silk", "silk", "Cotton", "  Linen  ", "Cotton"],
+        catalogColors: ["Ivory", "gold", "Gold", "Rose"],
+        catalogSizes: ["S", "M", "M", "L"],
+        catalogCategories: ["Sarees", "Lehengas", "sarees"],
+      }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.deepEqual(body.settings.catalogMaterials, ["Silk", "Cotton", "Linen"]);
+    assert.deepEqual(body.settings.catalogColors, ["Ivory", "gold", "Rose"]);
+    assert.deepEqual(body.settings.catalogSizes, ["S", "M", "L"]);
+    assert.deepEqual(body.settings.catalogCategories, ["Sarees", "Lehengas"]);
+  });
+
   it("ignores fields outside the admin-editable set (brandName is read-only via this endpoint)", async () => {
     const res = await fetch(`${base}/api/settings`, {
       method: "PATCH",

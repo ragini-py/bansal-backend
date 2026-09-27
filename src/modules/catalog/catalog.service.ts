@@ -20,9 +20,17 @@ export interface PublicProduct {
   id: string;
   version: number;
   slug: string;
+  productCode?: string;
+  styleNumber?: string;
+  dressName?: string;
   name: string;
+  material?: string;
+  clothMaterial?: string;
   price: number;
   mrp: number;
+  discountedPrice?: number | null;
+  discountPercentage?: number;
+  quantity?: number;
   currency: "INR";
   images: string[];
   category: string;
@@ -35,6 +43,9 @@ export interface PublicProduct {
   care: string[];
   sizes: string[];
   colours: string[];
+  availableSizes?: string[];
+  colorOptions?: string[];
+  additionalComment?: string;
   variants: PublicVariant[];
   featured: boolean;
   bestseller: boolean;
@@ -64,9 +75,17 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     id: doc._id.toString(),
     version: doc.__v,
     slug: doc.slug,
+    productCode: doc.productCode,
+    styleNumber: doc.styleNumber,
+    dressName: doc.dressName ?? doc.name,
     name: doc.name,
+    material: doc.material,
+    clothMaterial: doc.clothMaterial,
     price: doc.price,
     mrp: doc.mrp,
+    discountedPrice: doc.discountedPrice ?? null,
+    discountPercentage: doc.discountPercentage ?? 0,
+    quantity: doc.quantity ?? 0,
     currency: doc.currency,
     images: doc.images,
     category: doc.category,
@@ -79,6 +98,9 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     care: doc.care,
     sizes: doc.sizes,
     colours: doc.colours,
+    availableSizes: doc.availableSizes ?? doc.sizes,
+    colorOptions: doc.colorOptions ?? doc.colours,
+    additionalComment: doc.additionalComment,
     variants: doc.variants.map((v) => ({
       id: v._id.toString(),
       size: v.size,
@@ -131,16 +153,90 @@ function escapeRegex(value: string): string {
 // instead of "fetch everything, filter client-side".
 export async function listProducts(query: ListProductsQuery = {}): Promise<ProductPage> {
   const filter: FilterQuery<Record<string, unknown>> = {};
-  if (query.category) filter.category = query.category;
-  if (query.collection) filter.collections = query.collection;
+
+  if (query.category) {
+    filter.category = new RegExp(`^${escapeRegex(query.category.trim())}$`, "i");
+  }
+  if (query.collection) {
+    filter.collections = new RegExp(`^${escapeRegex(query.collection.trim())}$`, "i");
+  }
   if (query.published !== undefined) filter.published = query.published;
+  if (query.material) filter.material = new RegExp(`^${escapeRegex(query.material.trim())}$`, "i");
+  if (query.clothMaterial)
+    filter.clothMaterial = new RegExp(`^${escapeRegex(query.clothMaterial.trim())}$`, "i");
+  if (query.badge) filter.badge = query.badge;
+  if (query.featured !== undefined) filter.featured = query.featured;
+  if (query.bestseller !== undefined) filter.bestseller = query.bestseller;
+  if (query.newArrival !== undefined) filter.newArrival = query.newArrival;
+  if (query.tag) filter.tags = new RegExp(`^${escapeRegex(query.tag.trim())}$`, "i");
+
+  if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+    filter.price = {} as Record<string, number>;
+    if (query.minPrice !== undefined) (filter.price as Record<string, number>).$gte = query.minPrice;
+    if (query.maxPrice !== undefined) (filter.price as Record<string, number>).$lte = query.maxPrice;
+  }
+
+  if (query.minDiscount !== undefined || query.maxDiscount !== undefined) {
+    filter.discountPercentage = {} as Record<string, number>;
+    if (query.minDiscount !== undefined) (filter.discountPercentage as Record<string, number>).$gte = query.minDiscount;
+    if (query.maxDiscount !== undefined) (filter.discountPercentage as Record<string, number>).$lte = query.maxDiscount;
+  }
+
+  if (query.size) {
+    filter.$or = [
+      { sizes: new RegExp(`^${escapeRegex(query.size.trim())}$`, "i") },
+      { availableSizes: new RegExp(`^${escapeRegex(query.size.trim())}$`, "i") },
+    ];
+  }
+
+  if (query.color) {
+    const colorRegex = new RegExp(`^${escapeRegex(query.color.trim())}$`, "i");
+    filter.$or = [
+      ...(Array.isArray(filter.$or) ? filter.$or : []),
+      { colours: colorRegex },
+      { colorOptions: colorRegex },
+    ];
+  }
+
   if (query.search?.trim()) {
-    const regex = new RegExp(escapeRegex(query.search.trim()), "i");
-    filter.$or = [{ name: regex }, { shortDescription: regex }, { category: regex }, { tags: regex }];
+    const searchRegex = new RegExp(escapeRegex(query.search.trim()), "i");
+    const searchFields = [
+      { name: searchRegex },
+      { dressName: searchRegex },
+      { slug: searchRegex },
+      { productCode: searchRegex },
+      { styleNumber: searchRegex },
+      { shortDescription: searchRegex },
+      { description: searchRegex },
+      { material: searchRegex },
+      { clothMaterial: searchRegex },
+      { category: searchRegex },
+      { tags: searchRegex },
+      { collections: searchRegex },
+      { colours: searchRegex },
+      { sizes: searchRegex },
+      { availableSizes: searchRegex },
+      { colorOptions: searchRegex },
+      { additionalComment: searchRegex },
+    ];
+    filter.$or = [...(Array.isArray(filter.$or) ? filter.$or : []), ...searchFields];
   }
 
   const total = await Product.countDocuments(filter);
-  let cursor = Product.find(filter).sort({ createdAt: -1 });
+  let cursor = Product.find(filter);
+
+  const sortMap: Record<string, Record<string, 1 | -1>> = {
+    newest: { createdAt: -1 },
+    price_asc: { price: 1, createdAt: -1 },
+    price_desc: { price: -1, createdAt: -1 },
+    discount_desc: { discountPercentage: -1, createdAt: -1 },
+    name_asc: { name: 1 },
+    name_desc: { name: -1 },
+    featured_first: { featured: -1, createdAt: -1 },
+    bestseller_first: { bestseller: -1, createdAt: -1 },
+  };
+
+  cursor = cursor.sort(sortMap[query.sort ?? "newest"] ?? sortMap.newest);
 
   let page = 1;
   let limit = total;
