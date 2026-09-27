@@ -23,7 +23,12 @@ const schema = z.object({
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
-  SMTP_SECURE: z.coerce.boolean().optional(),
+  SMTP_SECURE: z
+    .preprocess((val) => {
+      if (typeof val === "string") return val.toLowerCase() === "true" || val === "1";
+      return Boolean(val);
+    }, z.boolean())
+    .optional(),
   EMAIL_FROM: z.string().optional(),
 });
 

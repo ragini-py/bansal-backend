@@ -33,11 +33,19 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
     return;
   }
 
-  await client.sendMail({
-    from: env.smtp.from,
-    to: input.to,
-    subject: input.subject,
-    html: input.html,
-    text: input.text,
-  });
+  try {
+    await client.sendMail({
+      from: env.smtp.from,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    });
+  } catch (err: unknown) {
+    console.error(
+      `[email] SMTP delivery failed (${err instanceof Error ? err.message : String(err)}). Falling back to console log:`,
+    );
+    console.log(`[email] to=${input.to} subject="${input.subject}"`);
+    console.log(input.text);
+  }
 }
