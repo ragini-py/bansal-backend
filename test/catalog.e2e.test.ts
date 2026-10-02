@@ -128,6 +128,20 @@ describe("catalog (against a real MongoDB instance)", () => {
     assert.ok(body.product.variants[0].id);
   });
 
+  it("hides unpublished products from the public single-product endpoint", async () => {
+    const { Product } = await import("../src/modules/catalog/models/index.js");
+    const draft = await Product.create({
+      ...productInput,
+      slug: "draft-silk-saree",
+      name: "Draft Silk Saree",
+      published: false,
+      variants: [{ size: "Free Size", colour: "Gold", availability: "available" }],
+    });
+
+    const res = await fetch(`${base}/api/products/${draft.slug}`);
+    assert.equal(res.status, 404);
+  });
+
   it("supports backend search, filter, sort, and pagination across spreadsheet fields", async () => {
     const createRes = await fetch(`${base}/api/products`, {
       method: "POST",

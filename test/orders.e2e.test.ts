@@ -266,6 +266,90 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 404);
   });
 
+  it("rejects an order for an unpublished product", async () => {
+    const { Product } = await import("../src/modules/catalog/models/index.js");
+    const draft = await Product.create({
+      slug: "draft-saree",
+      name: "Draft Saree",
+      price: 8000,
+      mrp: 9000,
+      images: ["/products/draft.jpg"],
+      category: "Sarees",
+      collections: [],
+      shortDescription: "Draft product.",
+      description: "Draft product used for availability tests.",
+      sizes: ["Free Size"],
+      colours: ["Rose Gold"],
+      variants: [{ size: "Free Size", colour: "Rose Gold", availability: "available" }],
+      published: false,
+    });
+
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          lines: [
+            {
+              productId: draft._id.toString(),
+              name: "Draft Saree",
+              image: "/products/draft.jpg",
+              slug: draft.slug,
+              size: "Free Size",
+              colour: "Rose Gold",
+              quantity: 1,
+              price: 8000,
+              mrp: 9000,
+            },
+          ],
+        }),
+      ),
+    });
+    assert.equal(res.status, 409);
+  });
+
+  it("rejects an order for a variant marked unavailable", async () => {
+    const { Product } = await import("../src/modules/catalog/models/index.js");
+    const unavailable = await Product.create({
+      slug: "sold-out-saree",
+      name: "Sold Out Saree",
+      price: 7000,
+      mrp: 8000,
+      images: ["/products/sold-out.jpg"],
+      category: "Sarees",
+      collections: [],
+      shortDescription: "Sold out variant.",
+      description: "Sold out variant used for coverage.",
+      sizes: ["Free Size"],
+      colours: ["Ivory"],
+      variants: [{ size: "Free Size", colour: "Ivory", availability: "unavailable" }],
+      published: true,
+    });
+
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify(
+        buildOrderInput({
+          lines: [
+            {
+              productId: unavailable._id.toString(),
+              name: "Sold Out Saree",
+              image: "/products/sold-out.jpg",
+              slug: unavailable.slug,
+              size: "Free Size",
+              colour: "Ivory",
+              quantity: 1,
+              price: 7000,
+              mrp: 8000,
+            },
+          ],
+        }),
+      ),
+    });
+    assert.equal(res.status, 409);
+  });
+
   it("never trusts a client-asserted payment/order status, forcing a fresh confirmed/processing order regardless of what's sent", async () => {
     const res = await fetch(`${base}/api/orders`, {
       method: "POST",

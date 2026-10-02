@@ -251,7 +251,7 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
 }
 
 export async function getProductBySlug(slug: string): Promise<PublicProduct> {
-  const doc = await Product.findOne({ slug });
+  const doc = await Product.findOne({ slug, published: true });
   if (!doc) throw new NotFoundError("Product not found.");
   return toPublicProduct(doc);
 }

@@ -133,6 +133,39 @@ export async function createOrder(
     input.lines.map(async (line) => {
       const product = await Product.findById(line.productId).catch(() => null);
       if (!product) throw new NotFoundError(`Product ${line.productId} no longer exists.`);
+      if (!product.published) {
+        throw new ConflictError(`Product ${product.name} is not currently published and cannot be ordered.`);
+      }
+
+      const requestedSize = line.size.trim();
+      const requestedColour = line.colour.trim();
+      const sizeExists = product.sizes.some((size) => size.trim().toLowerCase() === requestedSize.toLowerCase());
+      const colourExists = product.colours.some(
+        (colour) => colour.trim().toLowerCase() === requestedColour.toLowerCase(),
+      );
+      if (!sizeExists) {
+        throw new ConflictError(`Size ${requestedSize} is not available for ${product.name}.`);
+      }
+      if (!colourExists) {
+        throw new ConflictError(`Colour ${requestedColour} is not available for ${product.name}.`);
+      }
+
+      const variant = product.variants.find(
+        (item) =>
+          item.size.trim().toLowerCase() === requestedSize.toLowerCase() &&
+          item.colour.trim().toLowerCase() === requestedColour.toLowerCase(),
+      );
+      if (!variant) {
+        throw new ConflictError(
+          `The ${requestedColour} / ${requestedSize} variant is not available for ${product.name}.`,
+        );
+      }
+      if (variant.availability !== "available") {
+        throw new ConflictError(
+          `The ${requestedColour} / ${requestedSize} variant for ${product.name} is currently unavailable.`,
+        );
+      }
+
       return {
         ...line,
         name: product.name,
