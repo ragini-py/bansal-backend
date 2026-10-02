@@ -13,7 +13,7 @@ async function testApi() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "bansalnxindia@gmail.com", password: "Admin@12345" }),
   });
-  const adminData = await adminRes.json();
+  const adminData = (await adminRes.json()) as any;
   console.log("Admin login status:", adminRes.status);
   console.log("Admin user:", adminData.user);
 
@@ -23,7 +23,7 @@ async function testApi() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: "user@bansalnx.com", password: "User@12345" }),
   });
-  const userData = await userRes.json();
+  const userData = (await userRes.json()) as any;
   console.log("User login status:", userRes.status);
   console.log("User user:", userData.user);
 }
