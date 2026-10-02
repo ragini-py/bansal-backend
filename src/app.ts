@@ -19,6 +19,7 @@ import { settingsRouter } from "./modules/settings/settings.routes.js";
 import { contentRouter } from "./modules/content/content.routes.js";
 import { wishlistRouter } from "./modules/wishlist/wishlist.routes.js";
 import { auditRouter } from "./modules/audit/audit.routes.js";
+import { contactRouter } from "./modules/contact/contact.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/error-handler.js";
 import { sanitizeMongo } from "./middleware/sanitize-mongo.js";
 
@@ -86,6 +87,7 @@ export function createApp(): Express {
   app.use("/api/cart", cartRouter);
   app.use("/api/uploads", uploadsRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/contact", contactRouter);
   app.use("/api/content", contentRouter);
   app.use("/api/wishlist", wishlistRouter);
   app.use("/api/audit-logs", auditRouter);

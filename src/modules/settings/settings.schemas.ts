@@ -14,6 +14,19 @@ const catalogEnumArray = z.array(z.string().trim().min(1)).transform((items) =>
   ),
 );
 
+const catalogSizeArray = z.array(z.string().trim().min(1)).transform((items) =>
+  Array.from(
+    new Set(
+      items
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .map((item) => /^(?:XXS|XS|S|M|L|XL|XXL|XXXL)$/i.test(item)
+          ? item.toUpperCase()
+          : item.charAt(0).toUpperCase() + item.slice(1).toLowerCase()),
+    ),
+  ),
+);
+
 export const updateSettingsSchema = z
   .object({
     freeShippingThreshold: z.number().min(0),
@@ -21,7 +34,7 @@ export const updateSettingsSchema = z
     codMaxOrderValue: z.number().min(0),
     catalogMaterials: catalogEnumArray,
     catalogColors: catalogEnumArray,
-    catalogSizes: catalogEnumArray,
+    catalogSizes: catalogSizeArray,
     catalogCategories: catalogEnumArray,
     // Optimistic-concurrency guard — the version the client last read (see
     // settings.service.ts's updateSettings). Optional so older/other

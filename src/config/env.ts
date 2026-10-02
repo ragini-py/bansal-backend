@@ -105,6 +105,8 @@ export const env = {
     // Guest order tracking requires id + email together, but is still
     // unauthenticated — rate-limited to slow down brute-forcing that pair.
     trackOrderMax: isTest ? 10_000 : 20,
+    // Public contact form — keep guest submissions low to deter spam.
+    contactMax: isTest ? 10_000 : 5,
     // Authenticated, but still throttled — checkout touches coupon codes and
     // Order.create, so an unthrottled loop could brute-force coupon codes or
     // hammer the DB with junk orders.

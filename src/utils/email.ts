@@ -6,6 +6,7 @@ export interface SendEmailInput {
   subject: string;
   html: string;
   text: string;
+  replyTo?: string;
 }
 
 let transporter: Transporter | null = null;
@@ -25,12 +26,18 @@ function getTransporter(): Transporter | null {
 // silently dropping it, so every flow that sends mail (password reset,
 // order confirmation) is fully testable in dev with zero setup, and
 // upgrades to real delivery the moment SMTP_* is filled in, no code changes.
-export async function sendEmail(input: SendEmailInput): Promise<void> {
+export async function sendEmail(
+  input: SendEmailInput,
+  options: { logFallback?: boolean } = {},
+): Promise<boolean> {
+  const logFallback = options.logFallback ?? true;
   const client = getTransporter();
   if (!client || !env.smtp) {
-    console.log(`[email] (SMTP not configured — logging instead) to=${input.to} subject="${input.subject}"`);
-    console.log(input.text);
-    return;
+    if (logFallback) {
+      console.log(`[email] (SMTP not configured — logging instead) to=${input.to} subject="${input.subject}"`);
+      console.log(input.text);
+    }
+    return false;
   }
 
   try {
@@ -40,12 +47,17 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
       subject: input.subject,
       html: input.html,
       text: input.text,
+      ...(input.replyTo ? { replyTo: input.replyTo } : {}),
     });
+    return true;
   } catch (err: unknown) {
     console.error(
       `[email] SMTP delivery failed (${err instanceof Error ? err.message : String(err)}). Falling back to console log:`,
     );
-    console.log(`[email] to=${input.to} subject="${input.subject}"`);
-    console.log(input.text);
+    if (logFallback) {
+      console.log(`[email] to=${input.to} subject="${input.subject}"`);
+      console.log(input.text);
+    }
+    return false;
   }
 }

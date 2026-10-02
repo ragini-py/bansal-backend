@@ -21,6 +21,9 @@ before(async () => {
   process.env.CORS_ORIGIN = "http://localhost:5173";
   process.env.JWT_ACCESS_SECRET = "test-secret-test-secret-test-secret-test-secret";
   process.env.APP_URL = "http://localhost:4000";
+  process.env.SMTP_HOST = "";
+  process.env.SMTP_USER = "";
+  process.env.SMTP_PASS = "";
 
   const { createApp } = await import("../src/app.js");
   const { connectDb, disconnectDb: disconnect } = await import("../src/db/connect.js");
@@ -132,15 +135,15 @@ describe("settings (against a real MongoDB instance)", () => {
       body: JSON.stringify({
         catalogMaterials: ["Silk", "silk", "Cotton", "  Linen  ", "Cotton"],
         catalogColors: ["Ivory", "gold", "Gold", "Rose"],
-        catalogSizes: ["S", "M", "M", "L"],
+        catalogSizes: ["XS", "S", "M", "L", "XL", "XXL", "xxl", "M"],
         catalogCategories: ["Sarees", "Lehengas", "sarees"],
       }),
     });
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.deepEqual(body.settings.catalogMaterials, ["Silk", "Cotton", "Linen"]);
-    assert.deepEqual(body.settings.catalogColors, ["Ivory", "gold", "Rose"]);
-    assert.deepEqual(body.settings.catalogSizes, ["S", "M", "L"]);
+    assert.deepEqual(body.settings.catalogColors, ["Ivory", "Gold", "Rose"]);
+    assert.deepEqual(body.settings.catalogSizes, ["XS", "S", "M", "L", "XL", "XXL"]);
     assert.deepEqual(body.settings.catalogCategories, ["Sarees", "Lehengas"]);
   });
 

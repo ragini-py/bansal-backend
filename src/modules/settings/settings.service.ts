@@ -58,6 +58,19 @@ function normalizeCatalogEnumValues(values: string[] = []): string[] {
   );
 }
 
+function normalizeCatalogSizeValues(values: string[] = []): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => /^(?:XXS|XS|S|M|L|XL|XXL|XXXL)$/i.test(value)
+          ? value.toUpperCase()
+          : value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()),
+    ),
+  );
+}
+
 function toPublicSettings(doc: SettingsDoc): PublicSettings {
   return {
     version: doc.__v,
@@ -79,7 +92,7 @@ function toPublicSettings(doc: SettingsDoc): PublicSettings {
     allowGuestBrowsing: doc.allowGuestBrowsing,
     catalogMaterials: normalizeCatalogEnumValues(doc.catalogMaterials),
     catalogColors: normalizeCatalogEnumValues(doc.catalogColors),
-    catalogSizes: normalizeCatalogEnumValues(doc.catalogSizes),
+    catalogSizes: normalizeCatalogSizeValues(doc.catalogSizes),
     catalogCategories: normalizeCatalogEnumValues(doc.catalogCategories),
   };
 }
@@ -191,7 +204,7 @@ export async function updateSettings(input: UpdateSettingsInput, actor: AuditAct
 
   if (fields.catalogMaterials) doc.set("catalogMaterials", normalizeCatalogEnumValues(fields.catalogMaterials));
   if (fields.catalogColors) doc.set("catalogColors", normalizeCatalogEnumValues(fields.catalogColors));
-  if (fields.catalogSizes) doc.set("catalogSizes", normalizeCatalogEnumValues(fields.catalogSizes));
+  if (fields.catalogSizes) doc.set("catalogSizes", normalizeCatalogSizeValues(fields.catalogSizes));
   if (fields.catalogCategories) doc.set("catalogCategories", normalizeCatalogEnumValues(fields.catalogCategories));
 
   const remainingFields = Object.fromEntries(
