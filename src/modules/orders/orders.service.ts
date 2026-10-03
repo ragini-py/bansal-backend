@@ -2,6 +2,7 @@ import { ConflictError, ForbiddenError, NotFoundError } from "../../common/app-e
 import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
 import { type AuditActor, recordAudit } from "../audit/audit.service.js";
+import { User } from "../auth/models/index.js";
 import { Product } from "../catalog/models/index.js";
 import { priceCoupon } from "../coupons/coupons.service.js";
 import { Coupon } from "../coupons/models/coupon.model.js";
@@ -122,6 +123,12 @@ export async function createOrder(
   input: CreateOrderInput,
   idempotencyKey?: string,
 ): Promise<PublicOrder> {
+  const user = await User.findById(userId);
+  if (!user) throw new NotFoundError("Account not found.");
+  if (user.status === "blocked") {
+    throw new ForbiddenError("This account has been suspended. Please contact us.");
+  }
+
   if (idempotencyKey) {
     const existing = await Order.findOne({ userId, idempotencyKey });
     if (existing) return toPublicOrder(existing);
@@ -391,6 +398,7 @@ export async function updateOrder(
   }
 
   const { version: _expectedVersion, ...fields } = patch;
+  void _expectedVersion;
   doc.set(fields);
   await doc.save();
 

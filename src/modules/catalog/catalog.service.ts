@@ -330,7 +330,7 @@ async function validateAndResolveCategories(
       throw new BadRequestError("One or more referenced categories do not exist.");
     }
 
-    resolvedIds = found.map((c) => c._id as Types.ObjectId);
+    resolvedIds = found.map((c) => c._id);
     if (!resolvedCategory && found.length > 0) {
       resolvedCategory = found[0].name;
     }
@@ -339,7 +339,7 @@ async function validateAndResolveCategories(
       normalizedName: normalizeCategoryName(resolvedCategory),
     });
     if (found) {
-      resolvedIds = [found._id as Types.ObjectId];
+      resolvedIds = [found._id];
     }
   }
 
@@ -383,6 +383,7 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   );
 
   const { variants, version: _expectedVersion, ...rest } = input;
+  void _expectedVersion;
   doc.set({
     ...rest,
     category,
@@ -423,8 +424,8 @@ export async function createCategory(
   try {
     const doc = await Category.create({ name: trimmed, normalizedName, slug });
     return { category: toPublicCategory(doc), created: true };
-  } catch (err: any) {
-    if (err?.code === 11000) {
+  } catch (err: unknown) {
+    if (typeof err === "object" && err !== null && "code" in err && err.code === 11000) {
       const found = await Category.findOne({
         $or: [{ normalizedName }, { slug }],
       });

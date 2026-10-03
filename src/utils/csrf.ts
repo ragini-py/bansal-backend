@@ -27,5 +27,10 @@ export function setCsrfCookie(res: Response): string {
 }
 
 export function clearCsrfCookie(res: Response): void {
-  res.clearCookie(CSRF_COOKIE_NAME, { path: "/" });
+  res.clearCookie(CSRF_COOKIE_NAME, {
+    httpOnly: false,
+    path: "/",
+    secure: env.isProduction,
+    sameSite: "lax",
+  });
 }

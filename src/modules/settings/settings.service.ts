@@ -201,6 +201,7 @@ export async function updateSettings(input: UpdateSettingsInput, actor: AuditAct
   }
   const before = toPublicSettings(doc);
   const { version: _expectedVersion, ...fields } = input;
+  void _expectedVersion;
 
   if (fields.catalogMaterials) doc.set("catalogMaterials", normalizeCatalogEnumValues(fields.catalogMaterials));
   if (fields.catalogColors) doc.set("catalogColors", normalizeCatalogEnumValues(fields.catalogColors));

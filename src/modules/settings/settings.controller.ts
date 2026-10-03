@@ -10,7 +10,7 @@ export async function get(_req: Request, res: Response): Promise<void> {
 }
 
 export async function checkPincode(req: Request, res: Response): Promise<void> {
-  const pincode = String(req.query.pincode ?? "").trim();
+  const pincode = typeof req.query.pincode === "string" ? req.query.pincode.trim() : "";
   const result = await settingsService.checkPincodeAvailability(pincode);
   res.json(result);
 }

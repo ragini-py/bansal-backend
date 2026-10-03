@@ -8,7 +8,7 @@ export function notFoundHandler(req: Request, res: Response): void {
 }
 
 function isMongoDuplicateKeyError(err: unknown): boolean {
-  return typeof err === "object" && err !== null && "code" in err && (err as { code: unknown }).code === 11000;
+  return typeof err === "object" && err !== null && "code" in err && err.code === 11000;
 }
 
 // Express only recognizes this as an error-handling middleware if it takes

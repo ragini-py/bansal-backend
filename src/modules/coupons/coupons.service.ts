@@ -77,7 +77,7 @@ interface CouponPricingLine {
 // charging; only that second call is ever trusted for the actual order.
 export async function priceCoupon(
   code: string,
-  userId: string,
+  userId: string | null,
   subtotal: number,
   lines: CouponPricingLine[],
 ): Promise<{ couponCode: string; discount: number }> {
@@ -96,12 +96,18 @@ export async function priceCoupon(
     throw new ConflictError("This coupon has reached its usage limit.");
   }
   if (coupon.perUserLimit != null) {
+    if (!userId) {
+      throw new ConflictError("Please sign in to use this coupon.");
+    }
     const usedByUser = await Order.countDocuments({ userId, couponCode: coupon.code });
     if (usedByUser >= coupon.perUserLimit) {
       throw new ConflictError("You've already used this coupon the maximum number of times.");
     }
   }
   if (coupon.newCustomerOnly) {
+    if (!userId) {
+      throw new ConflictError("Please sign in to use this coupon.");
+    }
     const hasOrders = await Order.exists({ userId });
     if (hasOrders) throw new ConflictError("This coupon is only valid for new customers.");
   }
@@ -140,7 +146,7 @@ async function computeCartSubtotal(lines: CouponPricingLine[]): Promise<number> 
 
 export async function validateCouponForCart(
   code: string,
-  userId: string,
+  userId: string | null,
   lines: CouponPricingLine[],
 ): Promise<{ couponCode: string; discount: number; subtotal: number }> {
   const subtotal = await computeCartSubtotal(lines);

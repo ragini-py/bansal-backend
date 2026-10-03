@@ -200,13 +200,31 @@ describe("coupons (against a real MongoDB instance)", () => {
     assert.ok(!body.coupons.some((c: { code: string }) => c.code === "HIDDEN10"));
   });
 
-  it("rejects coupon validation from an unauthenticated caller", async () => {
+  it("allows coupon validation from an unauthenticated caller for general codes", async () => {
+    await fetch(`${base}/api/coupons`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify(buildCouponInput({ code: "GUESTPROMO", perUserLimit: null })),
+    });
+    const res = await fetch(`${base}/api/coupons/validate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: "GUESTPROMO", lines: [{ productId, quantity: 1 }] }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 200);
+    assert.equal(body.couponCode, "GUESTPROMO");
+  });
+
+  it("prompts sign-in when an unauthenticated caller validates a per-user limited coupon", async () => {
     const res = await fetch(`${base}/api/coupons/validate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code: "WELCOME15", lines: [{ productId, quantity: 1 }] }),
     });
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 409);
+    const body = await readJson(res);
+    assert.equal(body.message, "Please sign in to use this coupon.");
   });
 
   it("validates an eligible coupon and computes the discount server-side, ignoring the hidden code being unlisted", async () => {

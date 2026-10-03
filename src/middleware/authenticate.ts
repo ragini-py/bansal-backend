@@ -28,3 +28,22 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     next(new UnauthorizedError("Invalid access token."));
   }
 }
+
+export function optionalAuthenticate(req: Request, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization;
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+
+  if (!token) {
+    req.user = undefined;
+    next();
+    return;
+  }
+
+  try {
+    req.user = verifyAccessToken(token);
+    next();
+  } catch {
+    req.user = undefined;
+    next();
+  }
+}

@@ -25,7 +25,8 @@ export async function upload(req: Request, res: Response): Promise<void> {
     throw new BadRequestError("That file doesn't look like a supported image (jpg, png, webp, gif).");
   }
 
-  const requestedFolder = typeof req.body.folder === "string" ? req.body.folder : "general";
+  const body = req.body as Record<string, unknown> | undefined;
+  const requestedFolder = typeof body?.folder === "string" ? body.folder : "general";
   if (!UPLOAD_FOLDERS.has(requestedFolder as uploadsService.UploadFolder)) {
     throw new BadRequestError("That image folder is not supported.");
   }

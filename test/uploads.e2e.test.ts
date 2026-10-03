@@ -129,6 +129,7 @@ describe("uploads (local public storage)", () => {
   it("lets an admin upload an image and returns a fetchable local URL", async () => {
     const form = new FormData();
     form.append("image", tinyPngBlob(), "test.png");
+    form.append("folder", "products");
     const res = await fetch(`${base}/api/uploads`, {
       method: "POST",
       headers: { Authorization: `Bearer ${adminToken}` },

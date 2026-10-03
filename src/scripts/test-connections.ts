@@ -11,8 +11,8 @@ async function run() {
     await mongoose.connect(env.mongoUri, { serverSelectionTimeoutMS: 8000 });
     console.log("✓ MongoDB Connected successfully! readyState =", mongoose.connection.readyState);
     await mongoose.disconnect();
-  } catch (err: any) {
-    console.error("✗ MongoDB Connection failed:", err.message);
+  } catch (err: unknown) {
+    console.error("✗ MongoDB Connection failed:", err instanceof Error ? err.message : String(err));
   }
 
   console.log("\n=== Testing SMTP Connection Configuration ===");
@@ -40,8 +40,8 @@ async function run() {
       console.log("Verifying configured SMTP transport...");
       const result = await transporter.verify();
       console.log("✓ SMTP Transporter verified successfully!", result);
-    } catch (err: any) {
-      console.error("✗ SMTP Verification failed:", err.message);
+    } catch (err: unknown) {
+      console.error("✗ SMTP Verification failed:", err instanceof Error ? err.message : String(err));
     }
   }
 }

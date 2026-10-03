@@ -64,7 +64,7 @@ export function createApp(): Express {
   // so an orchestrator can hold traffic back during startup/reconnect
   // instead of routing requests a disconnected DB would just fail anyway.
   app.get("/api/ready", (_req, res) => {
-    const ready = mongoose.connection.readyState === 1;
+    const ready = Number(mongoose.connection.readyState) === 1;
     res.status(ready ? 200 : 503).json({ status: ready ? "ready" : "not_ready" });
   });
 

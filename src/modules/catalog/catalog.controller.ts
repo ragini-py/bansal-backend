@@ -9,8 +9,11 @@ import type {
   UpdateProductInput,
 } from "./catalog.schemas.js";
 
-export async function listProducts(req: Request, res: Response): Promise<void> {
-  const page = await catalogService.listProducts(req.query as unknown as ListProductsQuery);
+export async function listProducts(
+  req: Request<unknown, unknown, unknown, ListProductsQuery>,
+  res: Response,
+): Promise<void> {
+  const page = await catalogService.listProducts(req.query);
   res.json(page);
 }
 
@@ -65,12 +68,18 @@ export async function listCategories(_req: Request, res: Response): Promise<void
   res.json({ categories });
 }
 
-export async function createCategory(req: Request, res: Response): Promise<void> {
+export async function createCategory(
+  req: Request<unknown, unknown, { name: string }>,
+  res: Response,
+): Promise<void> {
   const { category, created } = await catalogService.createCategory(req.body);
   res.status(created ? 201 : 200).json({ category, created });
 }
 
-export async function updateCategory(req: Request<{ id: string }>, res: Response): Promise<void> {
+export async function updateCategory(
+  req: Request<{ id: string }, unknown, { name: string }>,
+  res: Response,
+): Promise<void> {
   const category = await catalogService.updateCategory(req.params.id, req.body);
   res.json({ category });
 }

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../../middleware/authenticate.js";
+import { authenticate, optionalAuthenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
 import { validate } from "../../middleware/validate.js";
 import * as couponsController from "./coupons.controller.js";
@@ -16,12 +16,12 @@ couponsRouter.get("/coupons", authenticate, authorize("admin"), couponsControlle
 // customer-facing "available offers" display (Account > Coupons).
 couponsRouter.get("/coupons/public", couponsController.publicList);
 
-// Signed-in customers check/apply a code they already know here — the
-// backend re-derives eligibility and the discount amount itself so a hidden
-// or targeted code is never enumerable via the coupon list.
+// Storefront visitors (guests or signed-in customers) check/apply a code
+// they already know here — the backend re-derives eligibility and the discount
+// amount itself so a hidden or targeted code is never enumerable via the coupon list.
 couponsRouter.post(
   "/coupons/validate",
-  authenticate,
+  optionalAuthenticate,
   validate(validateCouponSchema),
   couponsController.validate,
 );

@@ -18,7 +18,8 @@ export async function publicList(_req: Request, res: Response): Promise<void> {
 }
 
 export async function validate(req: Request, res: Response): Promise<void> {
-  const { sub } = req.user as AccessTokenPayload;
+  const user = req.user;
+  const sub = user?.sub ?? null;
   const { code, lines } = req.body as ValidateCouponInput;
   const result = await couponsService.validateCouponForCart(code, sub, lines);
   res.json(result);
