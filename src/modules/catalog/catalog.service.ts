@@ -1,13 +1,50 @@
-import type { FilterQuery } from "mongoose";
-import { ConflictError, NotFoundError } from "../../common/app-error.js";
+import { isValidObjectId, Types, type FilterQuery } from "mongoose";
+import { BadRequestError, ConflictError, NotFoundError } from "../../common/app-error.js";
 import { type AuditActor, recordAudit } from "../audit/audit.service.js";
-import { Collection, Product, type CollectionDoc, type ProductDoc } from "./models/index.js";
+import {
+  Category,
+  Collection,
+  Product,
+  type CategoryDoc,
+  type CollectionDoc,
+  type ProductDoc,
+} from "./models/index.js";
 import type {
   CollectionInput,
+  CreateCategoryInput,
   CreateProductInput,
   ListProductsQuery,
+  UpdateCategoryInput,
   UpdateProductInput,
 } from "./catalog.schemas.js";
+
+export interface PublicCategory {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+}
+
+export function toPublicCategory(doc: CategoryDoc): PublicCategory {
+  return {
+    id: doc._id.toString(),
+    name: doc.name,
+    slug: doc.slug,
+    createdAt: doc.createdAt?.toISOString?.() ?? new Date().toISOString(),
+  };
+}
+
+export function normalizeCategoryName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
 
 export interface PublicVariant {
   id: string;
@@ -34,6 +71,7 @@ export interface PublicProduct {
   currency: "INR";
   images: string[];
   category: string;
+  categoryIds: string[];
   collections: string[];
   tags: string[];
   badge: "new" | "bestseller" | "exclusive" | null;
@@ -88,7 +126,8 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     quantity: doc.quantity ?? 0,
     currency: doc.currency,
     images: doc.images,
-    category: doc.category,
+    category: doc.category || "",
+    categoryIds: (doc.categoryIds ?? []).map((id) => id.toString()),
     collections: doc.collections,
     tags: doc.tags,
     badge: doc.badge as PublicProduct["badge"],
@@ -155,7 +194,22 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
   const filter: FilterQuery<Record<string, unknown>> = {};
 
   if (query.category) {
-    filter.category = new RegExp(`^${escapeRegex(query.category.trim())}$`, "i");
+    const trimmed = query.category.trim();
+    const escaped = escapeRegex(trimmed);
+    const matchedCategory = await Category.findOne({
+      $or: [
+        { slug: slugify(trimmed) },
+        { normalizedName: normalizeCategoryName(trimmed) },
+      ],
+    });
+    if (matchedCategory) {
+      filter.$or = [
+        { categoryIds: matchedCategory._id },
+        { category: new RegExp(`^${escaped}$`, "i") },
+      ];
+    } else {
+      filter.category = new RegExp(`^${escaped}$`, "i");
+    }
   }
   if (query.collection) {
     filter.collections = new RegExp(`^${escapeRegex(query.collection.trim())}$`, "i");
@@ -256,10 +310,56 @@ export async function getProductBySlug(slug: string): Promise<PublicProduct> {
   return toPublicProduct(doc);
 }
 
+async function validateAndResolveCategories(
+  categoryIds?: string[],
+  categoryName?: string,
+): Promise<{ categoryIds: Types.ObjectId[]; category: string }> {
+  let resolvedIds: Types.ObjectId[] = [];
+  let resolvedCategory = categoryName?.trim() || "";
+
+  if (categoryIds && categoryIds.length > 0) {
+    const uniqueIds = Array.from(new Set(categoryIds.map((id) => id.trim())));
+    for (const cid of uniqueIds) {
+      if (!isValidObjectId(cid)) {
+        throw new BadRequestError(`Invalid category ID: "${cid}".`);
+      }
+    }
+
+    const found = await Category.find({ _id: { $in: uniqueIds } });
+    if (found.length !== uniqueIds.length) {
+      throw new BadRequestError("One or more referenced categories do not exist.");
+    }
+
+    resolvedIds = found.map((c) => c._id as Types.ObjectId);
+    if (!resolvedCategory && found.length > 0) {
+      resolvedCategory = found[0].name;
+    }
+  } else if (resolvedCategory) {
+    const found = await Category.findOne({
+      normalizedName: normalizeCategoryName(resolvedCategory),
+    });
+    if (found) {
+      resolvedIds = [found._id as Types.ObjectId];
+    }
+  }
+
+  return { categoryIds: resolvedIds, category: resolvedCategory };
+}
+
 export async function createProduct(input: CreateProductInput): Promise<PublicProduct> {
   const existing = await Product.findOne({ slug: input.slug });
   if (existing) throw new ConflictError("A product with this slug already exists.");
-  const doc = await Product.create(input);
+
+  const { categoryIds, category } = await validateAndResolveCategories(
+    input.categoryIds,
+    input.category,
+  );
+
+  const doc = await Product.create({
+    ...input,
+    category,
+    categoryIds,
+  });
   return toPublicProduct(doc);
 }
 
@@ -276,8 +376,18 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
     const existing = await Product.findOne({ slug: input.slug });
     if (existing) throw new ConflictError("A product with this slug already exists.");
   }
+
+  const { categoryIds, category } = await validateAndResolveCategories(
+    input.categoryIds,
+    input.category ?? doc.category,
+  );
+
   const { variants, version: _expectedVersion, ...rest } = input;
-  doc.set(rest);
+  doc.set({
+    ...rest,
+    category,
+    categoryIds,
+  });
   // Keep each existing variant's _id stable (it's referenced by carts,
   // wishlists, and past orders as variantId) — only variants with no `id`
   // (newly added in the admin form) get a fresh one from Mongoose.
@@ -287,6 +397,83 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
   );
   await doc.save();
   return toPublicProduct(doc);
+}
+
+export async function listCategories(): Promise<PublicCategory[]> {
+  const docs = await Category.find().sort({ name: 1 });
+  return docs.map(toPublicCategory);
+}
+
+export async function createCategory(
+  input: CreateCategoryInput,
+): Promise<{ category: PublicCategory; created: boolean }> {
+  const trimmed = input.name.trim();
+  if (!trimmed) throw new BadRequestError("Category name cannot be empty.");
+  const normalizedName = normalizeCategoryName(trimmed);
+  const slug = slugify(trimmed);
+  if (!slug) throw new BadRequestError("Invalid category name.");
+
+  const existing = await Category.findOne({
+    $or: [{ normalizedName }, { slug }],
+  });
+  if (existing) {
+    return { category: toPublicCategory(existing), created: false };
+  }
+
+  try {
+    const doc = await Category.create({ name: trimmed, normalizedName, slug });
+    return { category: toPublicCategory(doc), created: true };
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      const found = await Category.findOne({
+        $or: [{ normalizedName }, { slug }],
+      });
+      if (found) {
+        return { category: toPublicCategory(found), created: false };
+      }
+    }
+    throw err;
+  }
+}
+
+export async function updateCategory(
+  id: string,
+  input: UpdateCategoryInput,
+): Promise<PublicCategory> {
+  if (!isValidObjectId(id)) throw new BadRequestError("Invalid category ID.");
+  const doc = await Category.findById(id);
+  if (!doc) throw new NotFoundError("Category not found.");
+
+  const trimmed = input.name.trim();
+  if (!trimmed) throw new BadRequestError("Category name cannot be empty.");
+  const normalizedName = normalizeCategoryName(trimmed);
+  const slug = slugify(trimmed);
+  if (!slug) throw new BadRequestError("Invalid category name.");
+
+  const existing = await Category.findOne({
+    _id: { $ne: id },
+    $or: [{ normalizedName }, { slug }],
+  });
+  if (existing) {
+    throw new ConflictError("A category with this name or slug already exists.");
+  }
+
+  doc.set({ name: trimmed, normalizedName, slug });
+  await doc.save();
+  return toPublicCategory(doc);
+}
+
+export async function deleteCategory(id: string): Promise<void> {
+  if (!isValidObjectId(id)) throw new BadRequestError("Invalid category ID.");
+  const doc = await Category.findById(id);
+  if (!doc) throw new NotFoundError("Category not found.");
+
+  await Product.updateMany(
+    { categoryIds: doc._id },
+    { $pull: { categoryIds: doc._id } },
+  );
+
+  await Category.findByIdAndDelete(id);
 }
 
 export async function deleteProduct(id: string, actor: AuditActor): Promise<void> {

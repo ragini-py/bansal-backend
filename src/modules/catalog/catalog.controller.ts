@@ -59,3 +59,24 @@ export async function deleteCollection(req: Request<{ id: string }>, res: Respon
   await catalogService.deleteCollection(req.params.id);
   res.status(204).send();
 }
+
+export async function listCategories(_req: Request, res: Response): Promise<void> {
+  const categories = await catalogService.listCategories();
+  res.json({ categories });
+}
+
+export async function createCategory(req: Request, res: Response): Promise<void> {
+  const { category, created } = await catalogService.createCategory(req.body);
+  res.status(created ? 201 : 200).json({ category, created });
+}
+
+export async function updateCategory(req: Request<{ id: string }>, res: Response): Promise<void> {
+  const category = await catalogService.updateCategory(req.params.id, req.body);
+  res.json({ category });
+}
+
+export async function deleteCategory(req: Request<{ id: string }>, res: Response): Promise<void> {
+  await catalogService.deleteCategory(req.params.id);
+  res.status(204).send();
+}
+

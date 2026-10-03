@@ -7,7 +7,8 @@
  */
 import "dotenv/config";
 import { connectDb, disconnectDb } from "../db/connect.js";
-import { Collection, Product } from "../modules/catalog/models/index.js";
+import { Category, Collection, Product } from "../modules/catalog/models/index.js";
+import { normalizeCategoryName, slugify } from "../modules/catalog/catalog.service.js";
 
 const SIZES = ["XS", "S", "M", "L", "XL"];
 
@@ -396,11 +397,27 @@ const collectionSeeds = [
 async function seed(): Promise<void> {
   await connectDb();
 
+  const categoryNames = ["Skirt Sets", "Gowns", "Sarees", "Lehengas", "Kurta Sets"];
+  const categoryIdByName = new Map<string, string>();
+  for (const catName of categoryNames) {
+    const slug = slugify(catName);
+    const normalizedName = normalizeCategoryName(catName);
+    const catDoc = await Category.findOneAndUpdate(
+      { slug },
+      { $set: { name: catName, normalizedName, slug } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    categoryIdByName.set(catName, catDoc._id.toString());
+  }
+  console.log(`Seeded ${categoryNames.length} categories.`);
+
   const idByMockId = new Map<string, string>();
   for (const { mockId, ...fields } of productSeeds) {
+    const catId = categoryIdByName.get(fields.category);
+    const categoryIds = catId ? [catId] : [];
     const doc = await Product.findOneAndUpdate(
       { slug: fields.slug },
-      { $set: fields },
+      { $set: { ...fields, categoryIds } },
       { upsert: true, new: true, setDefaultsOnInsert: true },
     );
     idByMockId.set(mockId, doc._id.toString());

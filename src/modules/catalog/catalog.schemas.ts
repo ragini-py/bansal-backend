@@ -28,8 +28,8 @@ export const updateProductSchema = z.object({
   discountPercentage: z.number().min(0).max(100).optional(),
   quantity: z.number().int().min(0).optional(),
   currency: z.literal("INR"),
-  images: z.array(z.string().trim().min(1)),
-  category: z.string().trim().min(1),
+  category: z.string().trim().optional(),
+  categoryIds: z.array(z.string().trim().min(1)).optional(),
   collections: z.array(z.string().trim().min(1)),
   tags: z.array(z.string().trim()),
   badge: z.enum(["new", "bestseller", "exclusive"]).nullable(),
@@ -99,3 +99,13 @@ export const collectionSchema = z.object({
   order: z.number(),
 });
 export type CollectionInput = z.infer<typeof collectionSchema>;
+
+export const createCategorySchema = z.object({
+  name: z.string().trim().min(1, "Category name is required").max(100),
+});
+export type CreateCategoryInput = z.infer<typeof createCategorySchema>;
+
+export const updateCategorySchema = z.object({
+  name: z.string().trim().min(1, "Category name is required").max(100),
+});
+export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;

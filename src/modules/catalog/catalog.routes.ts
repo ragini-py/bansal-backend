@@ -5,8 +5,10 @@ import { validate, validateQuery } from "../../middleware/validate.js";
 import * as catalogController from "./catalog.controller.js";
 import {
   collectionSchema,
+  createCategorySchema,
   createProductSchema,
   listProductsQuerySchema,
+  updateCategorySchema,
   updateProductSchema,
 } from "./catalog.schemas.js";
 
@@ -21,6 +23,7 @@ catalogRouter.get("/products", validateQuery(listProductsQuerySchema), catalogCo
 catalogRouter.get("/products/:slug", catalogController.getProduct);
 catalogRouter.get("/collections", catalogController.listCollections);
 catalogRouter.get("/collections/:slug", catalogController.getCollection);
+catalogRouter.get("/categories", catalogController.listCategories);
 
 // Admin write — full CRUD, backing AdminPage's product create/edit/delete
 // and collections management.
@@ -65,3 +68,25 @@ catalogRouter.delete(
   authorize("admin"),
   catalogController.deleteCollection,
 );
+
+catalogRouter.post(
+  "/categories",
+  authenticate,
+  authorize("admin"),
+  validate(createCategorySchema),
+  catalogController.createCategory,
+);
+catalogRouter.put(
+  "/categories/:id",
+  authenticate,
+  authorize("admin"),
+  validate(updateCategorySchema),
+  catalogController.updateCategory,
+);
+catalogRouter.delete(
+  "/categories/:id",
+  authenticate,
+  authorize("admin"),
+  catalogController.deleteCategory,
+);
+

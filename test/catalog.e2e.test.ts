@@ -395,4 +395,176 @@ describe("collections admin CRUD (against a real MongoDB instance)", () => {
     });
     assert.equal(res.status, 404);
   });
+
+  describe("categories & duplicate protection", () => {
+    let kurtaCategoryId: string;
+    let festiveCategoryId: string;
+    let multiCategoryProductId: string;
+
+    it("1. creates 'Kurta Sets'", async () => {
+      const res = await fetch(`${base}/api/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ name: "Kurta Sets" }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 201);
+      assert.equal(body.category.name, "Kurta Sets");
+      assert.equal(body.category.slug, "kurta-sets");
+      assert.equal(body.created, true);
+      kurtaCategoryId = body.category.id;
+    });
+
+    it("2. attempts 'kurta sets' (lowercase) and does not duplicate", async () => {
+      const res = await fetch(`${base}/api/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ name: "kurta sets" }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.created, false);
+      assert.equal(body.category.id, kurtaCategoryId);
+    });
+
+    it("3. attempts '  Kurta Sets  ' (surrounding whitespace) and does not duplicate", async () => {
+      const res = await fetch(`${base}/api/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ name: "  Kurta Sets  " }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.created, false);
+      assert.equal(body.category.id, kurtaCategoryId);
+    });
+
+    it("4. confirms only one category exists in GET /api/categories matching kurta-sets", async () => {
+      const res = await fetch(`${base}/api/categories`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      const matches = body.categories.filter((c: any) => c.slug === "kurta-sets");
+      assert.equal(matches.length, 1);
+    });
+
+    it("5. creates another distinct category 'Festive Wear'", async () => {
+      const res = await fetch(`${base}/api/categories`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({ name: "Festive Wear" }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 201);
+      assert.equal(body.created, true);
+      assert.equal(body.category.slug, "festive-wear");
+      festiveCategoryId = body.category.id;
+    });
+
+    it("6. assigns both categories to a product", async () => {
+      const res = await fetch(`${base}/api/products`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({
+          ...productInput,
+          slug: "multi-cat-test-product",
+          name: "Multi Category Product",
+          categoryIds: [kurtaCategoryId, festiveCategoryId],
+        }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 201);
+      assert.equal(body.product.categoryIds.length, 2);
+      assert.ok(body.product.categoryIds.includes(kurtaCategoryId));
+      assert.ok(body.product.categoryIds.includes(festiveCategoryId));
+      multiCategoryProductId = body.product.id;
+    });
+
+    it("7. confirms both categories persist on GET /api/products/:slug", async () => {
+      const res = await fetch(`${base}/api/products/multi-cat-test-product`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.product.categoryIds.length, 2);
+      assert.ok(body.product.categoryIds.includes(kurtaCategoryId));
+      assert.ok(body.product.categoryIds.includes(festiveCategoryId));
+    });
+
+    it("8. removes one category from the product (leaves only Festive Wear)", async () => {
+      const res = await fetch(`${base}/api/products/${multiCategoryProductId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({
+          ...productInput,
+          slug: "multi-cat-test-product",
+          name: "Multi Category Product",
+          categoryIds: [festiveCategoryId],
+        }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.product.categoryIds.length, 1);
+      assert.equal(body.product.categoryIds[0], festiveCategoryId);
+    });
+
+    it("9. confirms the removed category 'Kurta Sets' still exists in the database", async () => {
+      const res = await fetch(`${base}/api/categories`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      const exists = body.categories.some((c: any) => c.id === kurtaCategoryId);
+      assert.equal(exists, true);
+    });
+
+    it("10. assigns the category with duplicates and confirms deduplication", async () => {
+      const res = await fetch(`${base}/api/products/${multiCategoryProductId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({
+          ...productInput,
+          slug: "multi-cat-test-product",
+          name: "Multi Category Product",
+          categoryIds: [festiveCategoryId, festiveCategoryId, kurtaCategoryId, kurtaCategoryId],
+        }),
+      });
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.product.categoryIds.length, 2);
+    });
+
+    it("11. rejects assigning a nonexistent category ID", async () => {
+      const res = await fetch(`${base}/api/products/${multiCategoryProductId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+        body: JSON.stringify({
+          ...productInput,
+          slug: "multi-cat-test-product",
+          name: "Multi Category Product",
+          categoryIds: ["000000000000000000000000"],
+        }),
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it("12. confirms a product can belong to multiple categories on the live GET endpoint", async () => {
+      const res = await fetch(`${base}/api/products/multi-cat-test-product`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.product.categoryIds.length, 2);
+    });
+
+    it("13. confirms category filtering returns the product in every assigned category", async () => {
+      // Query by kurta-sets
+      const res1 = await fetch(`${base}/api/products?category=kurta-sets`);
+      const body1 = await readJson(res1);
+      assert.equal(res1.status, 200);
+      const foundInKurta = body1.products.some((p: any) => p.slug === "multi-cat-test-product");
+      assert.equal(foundInKurta, true);
+
+      // Query by festive-wear
+      const res2 = await fetch(`${base}/api/products?category=festive-wear`);
+      const body2 = await readJson(res2);
+      assert.equal(res2.status, 200);
+      const foundInFestive = body2.products.some((p: any) => p.slug === "multi-cat-test-product");
+      assert.equal(foundInFestive, true);
+    });
+  });
 });
+
