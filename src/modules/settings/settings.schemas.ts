@@ -29,9 +29,18 @@ const catalogSizeArray = z.array(z.string().trim().min(1)).transform((items) =>
 
 export const updateSettingsSchema = z
   .object({
+    tagline: z.string().trim(),
+    supportEmail: z.string().trim().email(),
+    supportPhone: z.string().trim(),
+    codEnabled: z.boolean(),
+    codFee: z.number().min(0),
+    codMaxOrderValue: z.number().min(0),
+    razorpayEnabled: z.boolean(),
+    razorpayConnected: z.boolean(),
+    delhiveryConnected: z.boolean(),
+    allowGuestBrowsing: z.boolean(),
     freeShippingThreshold: z.number().min(0),
     shippingFee: z.number().min(0),
-    codMaxOrderValue: z.number().min(0),
     catalogMaterials: catalogEnumArray,
     catalogColors: catalogEnumArray,
     catalogSizes: catalogSizeArray,

@@ -480,6 +480,7 @@ export async function deleteCategory(id: string): Promise<void> {
 export async function deleteProduct(id: string, actor: AuditActor): Promise<void> {
   const doc = await Product.findByIdAndDelete(id);
   if (!doc) throw new NotFoundError("Product not found.");
+  await Collection.updateMany({ productIds: id }, { $pull: { productIds: id } });
   await recordAudit({
     actor,
     action: "product.deleted",
@@ -522,4 +523,5 @@ export async function updateCollection(id: string, input: CollectionInput): Prom
 export async function deleteCollection(id: string): Promise<void> {
   const doc = await Collection.findByIdAndDelete(id);
   if (!doc) throw new NotFoundError("Collection not found.");
+  await Product.updateMany({ collections: doc.slug }, { $pull: { collections: doc.slug } });
 }

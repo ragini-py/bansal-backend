@@ -11,3 +11,5 @@ export const wishlistRouter = Router();
 wishlistRouter.use(authenticate);
 wishlistRouter.get("/", wishlistController.get);
 wishlistRouter.put("/", validate(replaceWishlistSchema), wishlistController.replace);
+wishlistRouter.post("/:productId", wishlistController.addProduct);
+wishlistRouter.delete("/:productId", wishlistController.removeProduct);

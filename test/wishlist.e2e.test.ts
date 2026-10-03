@@ -104,4 +104,34 @@ describe("wishlist (against a real MongoDB instance)", () => {
     const body = await readJson(res);
     assert.deepEqual(body.productIds, ["p3"]);
   });
+
+  it("atomically adds and removes products via POST and DELETE without overwriting", async () => {
+    // Add p4
+    const postRes = await fetch(`${base}/api/wishlist/p4`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    const postBody = await readJson(postRes);
+    assert.equal(postRes.status, 200);
+    assert.ok(postBody.productIds.includes("p3"));
+    assert.ok(postBody.productIds.includes("p4"));
+
+    // Adding duplicate p4 does not duplicate
+    const postDupRes = await fetch(`${base}/api/wishlist/p4`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    const postDupBody = await readJson(postDupRes);
+    assert.equal(postDupRes.status, 200);
+    assert.equal(postDupBody.productIds.filter((id: string) => id === "p4").length, 1);
+
+    // Delete p3
+    const delRes = await fetch(`${base}/api/wishlist/p3`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${tokenA}` },
+    });
+    const delBody = await readJson(delRes);
+    assert.equal(delRes.status, 200);
+    assert.deepEqual(delBody.productIds, ["p4"]);
+  });
 });

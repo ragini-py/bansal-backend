@@ -14,3 +14,21 @@ export async function replaceWishlist(userId: string, input: ReplaceWishlistInpu
   );
   return doc.productIds;
 }
+
+export async function addToWishlist(userId: string, productId: string): Promise<string[]> {
+  const doc = await Wishlist.findOneAndUpdate(
+    { userId },
+    { $addToSet: { productIds: productId } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  return doc.productIds;
+}
+
+export async function removeFromWishlist(userId: string, productId: string): Promise<string[]> {
+  const doc = await Wishlist.findOneAndUpdate(
+    { userId },
+    { $pull: { productIds: productId } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
+  return doc.productIds;
+}

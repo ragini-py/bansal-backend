@@ -25,7 +25,7 @@ const orderLineSchema = z.object({
   slug: z.string().min(1),
   size: z.string().min(1),
   colour: z.string().min(1),
-  quantity: z.number().int().min(1),
+  quantity: z.number().int().min(1).max(10),
   price: z.number().min(0),
   mrp: z.number().min(0),
 });
@@ -91,6 +91,17 @@ const returnRequestSchema = z.object({
   refundAmount: z.number(),
 });
 
+const createOrderPaymentSchema = z.object({
+  method: z.enum(["razorpay", "cod"]),
+  status: z.enum(["pending", "processing", "paid", "failed", "cancelled", "refunded"]).optional(),
+  amount: z.number().min(0).optional(),
+  razorpayPaymentId: z.string().nullable().optional(),
+  transactionId: z.string().nullable().optional(),
+  paidAt: z.string().nullable().optional(),
+  refundStatus: z.enum(["none", "initiated", "completed"]).optional(),
+  refundAmount: z.number().optional(),
+});
+
 // Sent by CheckoutPage's placeOrder. `userId` is deliberately NOT accepted
 // from the client — the authenticated caller's own id is used instead. Line
 // price/mrp, subtotal, discount, shippingFee, tax, and total are all
@@ -98,8 +109,8 @@ const returnRequestSchema = z.object({
 // orders.service.ts's createOrder — the client's numbers here are used only
 // for the shape of the request, never trusted for the actual charge.
 // `status`, and everything in `payment` besides `method`, plus `shipment`
-// and `returnRequest`, are likewise accepted only for request-shape
-// validity and then discarded — a brand-new order is always built
+// and `returnRequest`, are likewise accepted optionally for client compatibility
+// and then discarded — a brand-new order is always built
 // server-side as "confirmed" with a fresh payment/shipment record, so a
 // tampered request can't mark itself paid/delivered/refunded before any
 // real payment or fulfilment has happened.
@@ -108,17 +119,17 @@ export const createOrderSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   phone: z.string().min(1),
   lines: z.array(orderLineSchema).min(1),
-  subtotal: z.number().min(0),
-  discount: z.number().min(0),
-  couponCode: z.string().nullable(),
-  shippingFee: z.number().min(0),
-  tax: z.number().min(0),
-  total: z.number().min(0),
-  status: orderStatusEnum,
-  payment: paymentSchema,
+  subtotal: z.number().min(0).optional(),
+  discount: z.number().min(0).optional(),
+  couponCode: z.string().nullable().optional(),
+  shippingFee: z.number().min(0).optional(),
+  tax: z.number().min(0).optional(),
+  total: z.number().min(0).optional(),
+  status: orderStatusEnum.optional(),
+  payment: createOrderPaymentSchema,
   address: orderAddressSchema,
-  shipment: shipmentSchema,
-  returnRequest: returnRequestSchema.nullable(),
+  shipment: shipmentSchema.optional(),
+  returnRequest: returnRequestSchema.nullable().optional(),
 });
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 

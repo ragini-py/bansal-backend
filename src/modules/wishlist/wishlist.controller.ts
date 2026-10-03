@@ -14,3 +14,15 @@ export async function replace(req: Request, res: Response): Promise<void> {
   const productIds = await wishlistService.replaceWishlist(sub, req.body as ReplaceWishlistInput);
   res.json({ productIds });
 }
+
+export async function addProduct(req: Request<{ productId: string }>, res: Response): Promise<void> {
+  const { sub } = req.user as AccessTokenPayload;
+  const productIds = await wishlistService.addToWishlist(sub, req.params.productId);
+  res.json({ productIds });
+}
+
+export async function removeProduct(req: Request<{ productId: string }>, res: Response): Promise<void> {
+  const { sub } = req.user as AccessTokenPayload;
+  const productIds = await wishlistService.removeFromWishlist(sub, req.params.productId);
+  res.json({ productIds });
+}

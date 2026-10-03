@@ -350,6 +350,53 @@ describe("orders (against a real MongoDB instance)", () => {
     assert.equal(res.status, 409);
   });
 
+  it("successfully creates an order when server-recalculated fields are omitted", async () => {
+    const res = await fetch(`${base}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${customerToken}` },
+      body: JSON.stringify({
+        customerName: "Priya Sharma",
+        email: "orders-customer@example.com",
+        phone: "9876543210",
+        lines: [
+          {
+            productId: seededProductId,
+            name: "Test Saree",
+            image: "/products/test.jpg",
+            slug: "test-saree",
+            size: "Free Size",
+            colour: "Gold",
+            quantity: 1,
+            price: 10000,
+            mrp: 12000,
+          },
+        ],
+        payment: {
+          method: "cod",
+        },
+        address: {
+          id: "adr-minimal",
+          label: "Home",
+          fullName: "Priya Sharma",
+          phone: "9876543210",
+          line1: "1 Park St",
+          locality: "Ballygunge",
+          city: "Kolkata",
+          state: "WB",
+          pincode: "700019",
+          country: "India",
+          isDefault: true,
+        },
+      }),
+    });
+    const body = await readJson(res);
+    assert.equal(res.status, 201);
+    assert.equal(body.order.status, "confirmed");
+    assert.equal(body.order.subtotal, 10000);
+    assert.equal(body.order.payment.method, "cod");
+    assert.ok(body.order.shipment);
+  });
+
   it("never trusts a client-asserted payment/order status, forcing a fresh confirmed/processing order regardless of what's sent", async () => {
     const res = await fetch(`${base}/api/orders`, {
       method: "POST",
