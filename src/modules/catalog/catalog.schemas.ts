@@ -82,7 +82,23 @@ export const listProductsQuerySchema = z.object({
   newArrival: z.coerce.boolean().optional(),
   tag: z.string().trim().min(1).optional(),
   sort: z
-    .enum(["newest", "price_asc", "price_desc", "discount_desc", "name_asc", "name_desc", "featured_first", "bestseller_first"])
+    .enum([
+      "newest",
+      "price_asc",
+      "price-asc",
+      "price_desc",
+      "price-desc",
+      "discount_desc",
+      "discount",
+      "name_asc",
+      "name-asc",
+      "name_desc",
+      "name-desc",
+      "featured_first",
+      "featured",
+      "bestseller_first",
+      "best-selling",
+    ])
     .optional(),
 });
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;

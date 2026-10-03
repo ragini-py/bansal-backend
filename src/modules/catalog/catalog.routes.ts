@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authenticate } from "../../middleware/authenticate.js";
+import { authenticate, optionalAuthenticate } from "../../middleware/authenticate.js";
 import { authorize } from "../../middleware/authorize.js";
 import { validate, validateQuery } from "../../middleware/validate.js";
 import * as catalogController from "./catalog.controller.js";
@@ -19,7 +19,12 @@ export const catalogRouter = Router();
 // fetch — with none of them set, it still returns the full catalog (the
 // storefront's current single-fetch-then-client-filter pattern, see
 // ProductsPage.tsx, keeps working unchanged against the same endpoint).
-catalogRouter.get("/products", validateQuery(listProductsQuerySchema), catalogController.listProducts);
+catalogRouter.get(
+  "/products",
+  optionalAuthenticate,
+  validateQuery(listProductsQuerySchema),
+  catalogController.listProducts,
+);
 catalogRouter.get("/products/:slug", catalogController.getProduct);
 catalogRouter.get("/collections", catalogController.listCollections);
 catalogRouter.get("/collections/:slug", catalogController.getCollection);

@@ -91,15 +91,8 @@ const returnRequestSchema = z.object({
   refundAmount: z.number(),
 });
 
-const createOrderPaymentSchema = z.object({
+const createOrderPaymentSchema = paymentSchema.partial().extend({
   method: z.enum(["razorpay", "cod"]),
-  status: z.enum(["pending", "processing", "paid", "failed", "cancelled", "refunded"]).optional(),
-  amount: z.number().min(0).optional(),
-  razorpayPaymentId: z.string().nullable().optional(),
-  transactionId: z.string().nullable().optional(),
-  paidAt: z.string().nullable().optional(),
-  refundStatus: z.enum(["none", "initiated", "completed"]).optional(),
-  refundAmount: z.number().optional(),
 });
 
 // Sent by CheckoutPage's placeOrder. `userId` is deliberately NOT accepted

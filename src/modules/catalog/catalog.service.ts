@@ -190,8 +190,18 @@ function escapeRegex(value: string): string {
 // working unchanged. page/limit are opt-in for a caller that wants real
 // pagination (e.g. an admin product table, or a future storefront rewrite)
 // instead of "fetch everything, filter client-side".
-export async function listProducts(query: ListProductsQuery = {}): Promise<ProductPage> {
+export async function listProducts(
+  query: ListProductsQuery = {},
+  options: { isAdmin?: boolean } = {},
+): Promise<ProductPage> {
   const filter: FilterQuery<Record<string, unknown>> = {};
+  const andClauses: FilterQuery<Record<string, unknown>>[] = [];
+
+  if (options.isAdmin) {
+    if (query.published !== undefined) filter.published = query.published;
+  } else {
+    filter.published = true;
+  }
 
   if (query.category) {
     const trimmed = query.category.trim();
@@ -203,10 +213,12 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
       ],
     });
     if (matchedCategory) {
-      filter.$or = [
-        { categoryIds: matchedCategory._id },
-        { category: new RegExp(`^${escaped}$`, "i") },
-      ];
+      andClauses.push({
+        $or: [
+          { categoryIds: matchedCategory._id },
+          { category: new RegExp(`^${escaped}$`, "i") },
+        ],
+      });
     } else {
       filter.category = new RegExp(`^${escaped}$`, "i");
     }
@@ -214,7 +226,6 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
   if (query.collection) {
     filter.collections = new RegExp(`^${escapeRegex(query.collection.trim())}$`, "i");
   }
-  if (query.published !== undefined) filter.published = query.published;
   if (query.material) filter.material = new RegExp(`^${escapeRegex(query.material.trim())}$`, "i");
   if (query.clothMaterial)
     filter.clothMaterial = new RegExp(`^${escapeRegex(query.clothMaterial.trim())}$`, "i");
@@ -237,19 +248,23 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
   }
 
   if (query.size) {
-    filter.$or = [
-      { sizes: new RegExp(`^${escapeRegex(query.size.trim())}$`, "i") },
-      { availableSizes: new RegExp(`^${escapeRegex(query.size.trim())}$`, "i") },
-    ];
+    const sizeRegex = new RegExp(`^${escapeRegex(query.size.trim())}$`, "i");
+    andClauses.push({
+      $or: [
+        { sizes: sizeRegex },
+        { availableSizes: sizeRegex },
+      ],
+    });
   }
 
   if (query.color) {
     const colorRegex = new RegExp(`^${escapeRegex(query.color.trim())}$`, "i");
-    filter.$or = [
-      ...(Array.isArray(filter.$or) ? filter.$or : []),
-      { colours: colorRegex },
-      { colorOptions: colorRegex },
-    ];
+    andClauses.push({
+      $or: [
+        { colours: colorRegex },
+        { colorOptions: colorRegex },
+      ],
+    });
   }
 
   if (query.search?.trim()) {
@@ -273,7 +288,13 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
       { colorOptions: searchRegex },
       { additionalComment: searchRegex },
     ];
-    filter.$or = [...(Array.isArray(filter.$or) ? filter.$or : []), ...searchFields];
+    andClauses.push({ $or: searchFields });
+  }
+
+  if (andClauses.length === 1) {
+    Object.assign(filter, andClauses[0]);
+  } else if (andClauses.length > 1) {
+    filter.$and = andClauses;
   }
 
   const total = await Product.countDocuments(filter);
@@ -282,12 +303,19 @@ export async function listProducts(query: ListProductsQuery = {}): Promise<Produ
   const sortMap: Record<string, Record<string, 1 | -1>> = {
     newest: { createdAt: -1 },
     price_asc: { price: 1, createdAt: -1 },
+    "price-asc": { price: 1, createdAt: -1 },
     price_desc: { price: -1, createdAt: -1 },
+    "price-desc": { price: -1, createdAt: -1 },
     discount_desc: { discountPercentage: -1, createdAt: -1 },
-    name_asc: { name: 1 },
-    name_desc: { name: -1 },
+    discount: { discountPercentage: -1, createdAt: -1 },
+    name_asc: { name: 1, createdAt: -1 },
+    "name-asc": { name: 1, createdAt: -1 },
+    name_desc: { name: -1, createdAt: -1 },
+    "name-desc": { name: -1, createdAt: -1 },
     featured_first: { featured: -1, createdAt: -1 },
+    featured: { featured: -1, createdAt: -1 },
     bestseller_first: { bestseller: -1, createdAt: -1 },
+    "best-selling": { bestseller: -1, createdAt: -1 },
   };
 
   cursor = cursor.sort(sortMap[query.sort ?? "newest"] ?? sortMap.newest);

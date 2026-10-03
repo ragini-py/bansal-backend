@@ -566,5 +566,90 @@ describe("collections admin CRUD (against a real MongoDB instance)", () => {
       assert.equal(foundInFestive, true);
     });
   });
+
+  describe("catalog pagination, sorting, and price boundaries", () => {
+    it("respects exact price boundary values on minPrice and maxPrice", async () => {
+      const res = await fetch(`${base}/api/products?minPrice=10000&maxPrice=18000`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.ok(body.products.length > 0);
+      for (const p of body.products) {
+        assert.ok(p.price >= 10000, `Expected price ${p.price} >= 10000`);
+        assert.ok(p.price <= 18000, `Expected price ${p.price} <= 18000`);
+      }
+    });
+
+    it("paginates stably and safely returns empty array beyond the last page", async () => {
+      const page1Res = await fetch(`${base}/api/products?page=1&limit=1&sort=price_asc`);
+      const page1 = await readJson(page1Res);
+      assert.equal(page1Res.status, 200);
+      assert.equal(page1.page, 1);
+      assert.equal(page1.limit, 1);
+      assert.equal(page1.products.length, 1);
+
+      const page2Res = await fetch(`${base}/api/products?page=2&limit=1&sort=price_asc`);
+      const page2 = await readJson(page2Res);
+      assert.equal(page2Res.status, 200);
+      assert.equal(page2.page, 2);
+      assert.equal(page2.products.length, 1);
+      assert.notEqual(page1.products[0].id, page2.products[0].id);
+
+      const beyondRes = await fetch(`${base}/api/products?page=9999&limit=10`);
+      const beyond = await readJson(beyondRes);
+      assert.equal(beyondRes.status, 200);
+      assert.equal(beyond.products.length, 0);
+      assert.ok(beyond.total > 0);
+    });
+
+    it("sorts by price descending globally", async () => {
+      const res = await fetch(`${base}/api/products?sort=price_desc&limit=10`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      for (let i = 0; i < body.products.length - 1; i++) {
+        assert.ok(body.products[i].price >= body.products[i + 1].price);
+      }
+    });
+
+    it("intersects category and size without erasing category filter", async () => {
+      const res = await fetch(`${base}/api/products?category=Lehengas&size=M`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.ok(body.products.length > 0);
+      for (const p of body.products) {
+        assert.equal(p.category, "Lehengas");
+        assert.ok(p.sizes.includes("M"));
+      }
+    });
+
+    it("intersects size and colour without acting as union", async () => {
+      // Free Size + Peach: no product has both Free Size AND Peach
+      const res = await fetch(`${base}/api/products?size=Free+Size&color=Peach`);
+      const body = await readJson(res);
+      assert.equal(res.status, 200);
+      assert.equal(body.products.length, 0);
+    });
+
+    it("hides unpublished products from public /api/products but allows admin to see all", async () => {
+      const publicRes = await fetch(`${base}/api/products`);
+      const publicBody = await readJson(publicRes);
+      assert.equal(publicRes.status, 200);
+      assert.ok(publicBody.products.every((p: any) => p.published === true));
+
+      const adminRes = await fetch(`${base}/api/products`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      const adminBody = await readJson(adminRes);
+      assert.equal(adminRes.status, 200);
+      assert.ok(adminBody.products.some((p: any) => p.published === false));
+    });
+
+    it("accepts frontend kebab-case sort parameters like price-asc and best-selling", async () => {
+      const ascRes = await fetch(`${base}/api/products?sort=price-asc&limit=5`);
+      assert.equal(ascRes.status, 200);
+      const bestRes = await fetch(`${base}/api/products?sort=best-selling&limit=5`);
+      assert.equal(bestRes.status, 200);
+    });
+  });
 });
+
 

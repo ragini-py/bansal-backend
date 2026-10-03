@@ -13,7 +13,8 @@ export async function listProducts(
   req: Request<unknown, unknown, unknown, ListProductsQuery>,
   res: Response,
 ): Promise<void> {
-  const page = await catalogService.listProducts(req.query);
+  const isAdmin = req.user?.role === "admin";
+  const page = await catalogService.listProducts(req.query, { isAdmin });
   res.json(page);
 }
 
