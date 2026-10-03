@@ -2,3 +2,7 @@ node_modules
 dist
 *.log
 /public/images/
+.env
+.env.*
+!.env.example
+

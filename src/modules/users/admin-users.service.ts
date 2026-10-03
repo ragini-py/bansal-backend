@@ -1,7 +1,7 @@
 import { ForbiddenError, NotFoundError } from "../../common/app-error.js";
 import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { toPublicUser, type PublicUser } from "../auth/auth.service.js";
-import { User } from "../auth/models/index.js";
+import { Session, User } from "../auth/models/index.js";
 import type { UpdateUserInput } from "./admin-users.schemas.js";
 
 export async function listUsers(): Promise<PublicUser[]> {
@@ -33,6 +33,9 @@ export async function updateUser(
   const after = { role: user.role, status: user.status };
 
   if (before.role !== after.role || before.status !== after.status) {
+    if (after.status === "blocked" || before.role !== after.role) {
+      await Session.updateMany({ userId: id, revokedAt: null }, { revokedAt: new Date() });
+    }
     // Covers both "customer blocking" (status) and "admin permission
     // changes" (role) — the two are indistinguishable at the endpoint level
     // today (one generic PATCH), so both land under the same action, with

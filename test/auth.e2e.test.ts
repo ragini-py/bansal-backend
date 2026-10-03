@@ -234,6 +234,8 @@ describe("auth flow (against a real MongoDB instance)", () => {
       headers: csrfHeaders(refreshCookie, csrfToken),
     });
     assert.equal(logoutRes.status, 204);
+    const setCookie = logoutRes.headers.get("set-cookie") || "";
+    assert.ok(setCookie.includes("Path=/api/auth"));
 
     const refreshAfterLogoutRes = await fetch(`${base}/api/auth/refresh`, {
       method: "POST",
@@ -252,6 +254,35 @@ describe("auth flow (against a real MongoDB instance)", () => {
       body: JSON.stringify({ email, password }),
     });
     assert.equal(res.status, 403);
+
+    await User.updateOne({ email }, { status: "active" });
+  });
+
+  it("blocked accounts cannot refresh their session, and the session is revoked", async () => {
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    assert.equal(loginRes.status, 200);
+    const loginBody = await readJson(loginRes);
+    const activeRefreshCookie = extractRefreshCookie(loginRes);
+    assert.ok(activeRefreshCookie);
+
+    const { User, Session } = await import("../src/modules/auth/models/index.js");
+    await User.updateOne({ email }, { status: "blocked" });
+
+    const refreshRes = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: csrfHeaders(activeRefreshCookie!, loginBody.csrfToken),
+    });
+    assert.equal(refreshRes.status, 403);
+    const refreshBody = await readJson(refreshRes);
+    assert.equal(refreshBody.code, "FORBIDDEN");
+
+    const blockedUser = await User.findOne({ email });
+    const liveSessions = await Session.find({ userId: blockedUser!._id, revokedAt: null });
+    assert.equal(liveSessions.length, 0);
 
     await User.updateOne({ email }, { status: "active" });
   });

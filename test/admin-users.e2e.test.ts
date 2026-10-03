@@ -120,7 +120,23 @@ describe("admin user management (against a real MongoDB instance)", () => {
     assert.equal(res.status, 400);
   });
 
-  it("lets an admin promote a customer to admin", async () => {
+  it("lets an admin promote a customer to admin, and revokes affected user sessions while keeping unrelated sessions active", async () => {
+    const { Session } = await import("../src/modules/auth/models/index.js");
+
+    // Login customer to create an active session
+    const customerLoginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "admin-users-customer@example.com", password: "correct-horse-1" }),
+    });
+    assert.equal(customerLoginRes.status, 200);
+
+    const customerSessionsBefore = await Session.find({ userId: customerId, revokedAt: null });
+    const adminSessionsBefore = await Session.find({ userId: adminId, revokedAt: null });
+    assert.ok(customerSessionsBefore.length > 0);
+    assert.ok(adminSessionsBefore.length > 0);
+
+    // Promote customer to admin (role changes from customer -> admin)
     const res = await fetch(`${base}/api/users/${customerId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
@@ -129,9 +145,49 @@ describe("admin user management (against a real MongoDB instance)", () => {
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.equal(body.user.role, "admin");
+
+    // Affected user's active sessions are revoked
+    const customerSessionsAfter = await Session.find({ userId: customerId, revokedAt: null });
+    assert.equal(customerSessionsAfter.length, 0);
+
+    // Unrelated admin's sessions remain active
+    const adminSessionsAfter = await Session.find({ userId: adminId, revokedAt: null });
+    assert.equal(adminSessionsAfter.length, adminSessionsBefore.length);
   });
 
-  it("lets an admin block a customer, and the blocked account can no longer log in", async () => {
+  it("does not unnecessarily revoke sessions when the role is unchanged", async () => {
+    const { Session } = await import("../src/modules/auth/models/index.js");
+
+    // Customer logs in after being promoted
+    const loginRes = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "admin-users-customer@example.com", password: "correct-horse-1" }),
+    });
+    assert.equal(loginRes.status, 200);
+
+    const sessionsBefore = await Session.find({ userId: customerId, revokedAt: null });
+    assert.ok(sessionsBefore.length > 0);
+
+    // Send PATCH with the SAME role ("admin" -> "admin")
+    const res = await fetch(`${base}/api/users/${customerId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ role: "admin" }),
+    });
+    assert.equal(res.status, 200);
+
+    // Sessions are NOT revoked
+    const sessionsAfter = await Session.find({ userId: customerId, revokedAt: null });
+    assert.equal(sessionsAfter.length, sessionsBefore.length);
+  });
+
+  it("lets an admin block a customer, revoking active sessions without affecting unrelated users", async () => {
+    const { Session } = await import("../src/modules/auth/models/index.js");
+
+    const adminSessionsBefore = await Session.find({ userId: adminId, revokedAt: null });
+    assert.ok(adminSessionsBefore.length > 0);
+
     const res = await fetch(`${base}/api/users/${customerId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
@@ -141,6 +197,15 @@ describe("admin user management (against a real MongoDB instance)", () => {
     assert.equal(res.status, 200);
     assert.equal(body.user.status, "blocked");
 
+    // Blocked user active sessions revoked
+    const customerSessionsAfter = await Session.find({ userId: customerId, revokedAt: null });
+    assert.equal(customerSessionsAfter.length, 0);
+
+    // Unrelated admin sessions remain active
+    const adminSessionsAfter = await Session.find({ userId: adminId, revokedAt: null });
+    assert.equal(adminSessionsAfter.length, adminSessionsBefore.length);
+
+    // Blocked account cannot log in
     const loginRes = await fetch(`${base}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

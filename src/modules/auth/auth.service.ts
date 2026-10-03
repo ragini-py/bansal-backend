@@ -152,6 +152,11 @@ export async function rotateSession(rawRefreshToken: string, meta: RequestMeta):
     await session.save();
     throw new UnauthorizedError("Account no longer exists.");
   }
+  if (user.status === "blocked") {
+    session.revokedAt = new Date();
+    await session.save();
+    throw new ForbiddenError("This account has been suspended. Please contact us.");
+  }
 
   // Rotation: revoke the old session and issue a brand new one, rather than
   // reusing the same session document — limits how long a stolen (but not
