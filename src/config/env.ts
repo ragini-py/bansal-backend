@@ -10,6 +10,7 @@ const schema = z.object({
   JWT_ACCESS_TTL: z.string().default("15m"),
   REFRESH_TOKEN_TTL_MS: z.coerce.number().default(7 * 24 * 60 * 60 * 1000),
   PASSWORD_RESET_TTL_MS: z.coerce.number().default(30 * 60 * 1000),
+  EMAIL_VERIFICATION_TTL_MS: z.coerce.number().default(24 * 60 * 60 * 1000),
   // No default — every environment must state its own URL explicitly,
   // rather than silently falling back to a dev value that would be wrong
   // in staging/prod.
@@ -66,6 +67,7 @@ export const env = {
   },
   refreshTokenTtlMs: parsed.data.REFRESH_TOKEN_TTL_MS,
   passwordResetTtlMs: parsed.data.PASSWORD_RESET_TTL_MS,
+  emailVerificationTtlMs: parsed.data.EMAIL_VERIFICATION_TTL_MS,
   razorpay: {
     keyId: parsed.data.RAZORPAY_KEY_ID,
     keySecret: parsed.data.RAZORPAY_KEY_SECRET,
@@ -78,7 +80,7 @@ export const env = {
     pickupPincode: parsed.data.SHIPROCKET_PICKUP_PINCODE,
   },
   smtp:
-    parsed.data.SMTP_HOST && parsed.data.SMTP_USER && parsed.data.SMTP_PASS
+    !isTest && parsed.data.SMTP_HOST && parsed.data.SMTP_USER && parsed.data.SMTP_PASS
       ? {
         host: parsed.data.SMTP_HOST,
         port: parsed.data.SMTP_PORT ?? 587,
@@ -97,6 +99,8 @@ export const env = {
   rateLimit: {
     loginMax: isTest ? 10_000 : 5,
     registerMax: isTest ? 10_000 : 5,
+    verifyEmailMax: isTest ? 10_000 : 20,
+    resendVerificationMax: isTest ? 10_000 : 5,
     forgotPasswordMax: isTest ? 10_000 : 5,
     resetPasswordMax: isTest ? 10_000 : 10,
     // Authenticated, but still throttled — currentPassword is checked here,

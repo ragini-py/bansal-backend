@@ -44,19 +44,20 @@ before(async () => {
   const port = typeof addr === "object" && addr ? addr.port : 0;
   base = `http://localhost:${port}`;
 
-  const res = await fetch(`${base}/api/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      firstName: "Priya",
-      lastName: "Sharma",
-      email: "priya-addr@example.com",
-      phone: "9876543210",
-      password: "correct-horse-1",
-    }),
+  const { User } = await import("../src/modules/auth/models/index.js");
+  const { hashPassword } = await import("../src/utils/password.js");
+  const { signAccessToken } = await import("../src/utils/jwt.js");
+
+  const user = await User.create({
+    firstName: "Priya",
+    lastName: "Sharma",
+    email: "priya-addr@example.com",
+    phone: "9876543210",
+    passwordHash: await hashPassword("correct-horse-1"),
+    isEmailVerified: true,
+    status: "active",
   });
-  const body = await readJson(res);
-  accessToken = body.accessToken;
+  accessToken = signAccessToken({ sub: user._id.toString(), email: user.email, role: user.role });
 });
 
 after(async () => {

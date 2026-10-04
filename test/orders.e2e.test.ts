@@ -133,6 +133,7 @@ before(async () => {
     firstName: "Priya",
     lastName: "Sharma",
     phone: "9876543210",
+    isEmailVerified: true,
   });
   await User.create({
     email: "orders-other@example.com",
@@ -140,6 +141,7 @@ before(async () => {
     firstName: "Other",
     lastName: "Customer",
     phone: "9876543210",
+    isEmailVerified: true,
   });
   await User.create({
     email: "orders-admin@example.com",
@@ -148,6 +150,7 @@ before(async () => {
     lastName: "Admin",
     phone: "9876543210",
     role: "admin",
+    isEmailVerified: true,
   });
 
   async function login(email: string): Promise<string> {
@@ -687,16 +690,16 @@ describe("coupon enforcement at order creation (against a real MongoDB instance)
 
   before(async () => {
     freshCustomerEmail = `coupon-cust-${Date.now()}@example.com`;
-    await fetch(`${base}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        firstName: "Coupon",
-        lastName: "Cust",
-        email: freshCustomerEmail,
-        phone: "9876543210",
-        password: "correct-horse-1",
-      }),
+    const { User } = await import("../src/modules/auth/models/index.js");
+    const { hashPassword } = await import("../src/utils/password.js");
+    await User.create({
+      firstName: "Coupon",
+      lastName: "Cust",
+      email: freshCustomerEmail,
+      phone: "9876543210",
+      passwordHash: await hashPassword("correct-horse-1"),
+      isEmailVerified: true,
+      status: "active",
     });
     const loginRes = await fetch(`${base}/api/auth/login`, {
       method: "POST",
@@ -863,16 +866,16 @@ describe("idempotent order creation (against a real MongoDB instance)", () => {
 
   before(async () => {
     idemCustomerEmail = `idem-cust-${Date.now()}@example.com`;
-    await fetch(`${base}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        firstName: "Idem",
-        lastName: "Cust",
-        email: idemCustomerEmail,
-        phone: "9876543210",
-        password: "correct-horse-1",
-      }),
+    const { User } = await import("../src/modules/auth/models/index.js");
+    const { hashPassword } = await import("../src/utils/password.js");
+    await User.create({
+      firstName: "Idem",
+      lastName: "Cust",
+      email: idemCustomerEmail,
+      phone: "9876543210",
+      passwordHash: await hashPassword("correct-horse-1"),
+      isEmailVerified: true,
+      status: "active",
     });
     const loginRes = await fetch(`${base}/api/auth/login`, {
       method: "POST",
@@ -933,16 +936,16 @@ describe("shipping/COD pricing from live Settings (against a real MongoDB instan
 
   before(async () => {
     shippingCustomerEmail = `shipping-cust-${Date.now()}@example.com`;
-    await fetch(`${base}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        firstName: "Ship",
-        lastName: "Cust",
-        email: shippingCustomerEmail,
-        phone: "9876543210",
-        password: "correct-horse-1",
-      }),
+    const { User } = await import("../src/modules/auth/models/index.js");
+    const { hashPassword } = await import("../src/utils/password.js");
+    await User.create({
+      firstName: "Ship",
+      lastName: "Cust",
+      email: shippingCustomerEmail,
+      phone: "9876543210",
+      passwordHash: await hashPassword("correct-horse-1"),
+      isEmailVerified: true,
+      status: "active",
     });
     const loginRes = await fetch(`${base}/api/auth/login`, {
       method: "POST",

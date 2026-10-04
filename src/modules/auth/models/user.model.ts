@@ -15,6 +15,8 @@ const userSchema = new Schema(
     phone: { type: String, required: true, trim: true },
     role: { type: String, enum: ROLES, default: "customer" },
     status: { type: String, enum: USER_STATUSES, default: "active" },
+    isEmailVerified: { type: Boolean, default: false },
+    emailVerifiedAt: { type: Date, default: null },
     addresses: { type: [addressSchema], default: [] },
   },
   { timestamps: true },

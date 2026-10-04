@@ -33,17 +33,24 @@ before(async () => {
   const port = typeof addr === "object" && addr ? addr.port : 0;
   base = `http://localhost:${port}`;
 
-  async function registerAndLogin(email: string): Promise<string> {
-    const res = await fetch(`${base}/api/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ firstName: "Cart", lastName: "User", email, phone: "9876543210", password: "correct-horse-1" }),
+  const { User } = await import("../src/modules/auth/models/index.js");
+  const { hashPassword } = await import("../src/utils/password.js");
+  const { signAccessToken } = await import("../src/utils/jwt.js");
+
+  async function createVerifiedUser(email: string): Promise<string> {
+    const user = await User.create({
+      firstName: "Cart",
+      lastName: "User",
+      email,
+      phone: "9876543210",
+      passwordHash: await hashPassword("correct-horse-1"),
+      isEmailVerified: true,
+      status: "active",
     });
-    const body = await readJson(res);
-    return body.accessToken;
+    return signAccessToken({ sub: user._id.toString(), email: user.email, role: user.role });
   }
-  tokenA = await registerAndLogin("cart-a@example.com");
-  tokenB = await registerAndLogin("cart-b@example.com");
+  tokenA = await createVerifiedUser("cart-a@example.com");
+  tokenB = await createVerifiedUser("cart-b@example.com");
 });
 
 after(async () => {

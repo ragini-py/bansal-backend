@@ -30,10 +30,16 @@ before(async () => {
   const port = typeof addr === "object" && addr ? addr.port : 0;
   base = `http://localhost:${port}`;
 
-  await fetch(`${base}/api/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ firstName: "Reset", lastName: "Me", email, phone: "9876543210", password: originalPassword }),
+  const { User } = await import("../src/modules/auth/models/index.js");
+  const { hashPassword } = await import("../src/utils/password.js");
+  await User.create({
+    firstName: "Reset",
+    lastName: "Me",
+    email,
+    phone: "9876543210",
+    passwordHash: await hashPassword(originalPassword),
+    isEmailVerified: true,
+    status: "active",
   });
 });
 

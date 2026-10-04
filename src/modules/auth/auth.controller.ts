@@ -9,7 +9,9 @@ import type {
   ForgotPasswordInput,
   LoginInput,
   RegisterInput,
+  ResendVerificationInput,
   ResetPasswordInput,
+  VerifyEmailInput,
 } from "./auth.schemas.js";
 
 // Thin HTTP layer only — request parsing (delegated to the `validate`
@@ -21,14 +23,32 @@ function requestMeta(req: Request): authService.RequestMeta {
 }
 
 export async function register(req: Request, res: Response): Promise<void> {
-  const { user, accessToken, refreshToken } = await authService.registerUser(req.body as RegisterInput, requestMeta(req));
+  const result = await authService.registerUser(req.body as RegisterInput);
+  res.status(201).json(result);
+}
+
+export async function verifyEmail(req: Request, res: Response): Promise<void> {
+  const { user, accessToken, refreshToken } = await authService.verifyEmail(
+    (req.body as VerifyEmailInput).token,
+    requestMeta(req),
+  );
   setRefreshCookie(res, refreshToken);
   const csrfToken = setCsrfCookie(res);
-  res.status(201).json({ user, accessToken, csrfToken });
+  res.json({ user, accessToken, csrfToken });
+}
+
+export async function resendVerification(req: Request, res: Response): Promise<void> {
+  await authService.resendVerification(req.body as ResendVerificationInput);
+  res.status(200).json({
+    message: "If the account exists and is unverified, a verification link has been sent.",
+  });
 }
 
 export async function login(req: Request, res: Response): Promise<void> {
-  const { user, accessToken, refreshToken } = await authService.loginUser(req.body as LoginInput, requestMeta(req));
+  const { user, accessToken, refreshToken } = await authService.loginUser(
+    req.body as LoginInput,
+    requestMeta(req),
+  );
   setRefreshCookie(res, refreshToken);
   const csrfToken = setCsrfCookie(res);
   res.json({ user, accessToken, csrfToken });

@@ -1,15 +1,27 @@
+import { isValidObjectId } from "mongoose";
 import { ConflictError, ForbiddenError, UnauthorizedError } from "../../common/app-error.js";
 import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
+import {
+  renderEmailVerificationHtml,
+  renderPasswordResetHtml,
+} from "../../utils/email-templates.js";
 import { comparePassword, hashPassword } from "../../utils/password.js";
 import { generateOpaqueToken, hashToken } from "../../utils/random-token.js";
 import { signAccessToken, type AccessTokenPayload } from "../../utils/jwt.js";
-import { PasswordResetToken, Session, User, type UserDoc } from "./models/index.js";
+import {
+  EmailVerificationToken,
+  PasswordResetToken,
+  Session,
+  User,
+  type UserDoc,
+} from "./models/index.js";
 import type {
   ChangePasswordInput,
   ForgotPasswordInput,
   LoginInput,
   RegisterInput,
+  ResendVerificationInput,
   ResetPasswordInput,
 } from "./auth.schemas.js";
 
@@ -40,6 +52,7 @@ export interface PublicUser {
   phone: string;
   role: UserDoc["role"];
   status: UserDoc["status"];
+  isEmailVerified: boolean;
   createdAt: string;
   addresses: PublicAddress[];
 }
@@ -47,6 +60,12 @@ export interface PublicUser {
 export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+export interface RegisterResult {
+  message: string;
+  email: string;
+  requiresVerification: true;
 }
 
 // Matches frontend/src/data/types.ts's User exactly, minus `password` (never
@@ -61,6 +80,7 @@ export function toPublicUser(user: UserDoc): PublicUser {
     phone: user.phone,
     role: user.role,
     status: user.status,
+    isEmailVerified: user.isEmailVerified ?? false,
     createdAt: user.createdAt.toISOString(),
     addresses: user.addresses.map((a) => ({
       id: a._id.toString(),
@@ -95,10 +115,7 @@ async function issueSession(user: UserDoc, meta: RequestMeta): Promise<SessionTo
   return { accessToken: signAccessToken(toAccessTokenPayload(user)), refreshToken: token };
 }
 
-export async function registerUser(
-  input: RegisterInput,
-  meta: RequestMeta,
-): Promise<{ user: PublicUser } & SessionTokens> {
+export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
   const existing = await User.findOne({ email: input.email });
   if (existing) throw new ConflictError("An account with this email already exists.");
 
@@ -109,13 +126,101 @@ export async function registerUser(
     firstName: input.firstName,
     lastName: input.lastName,
     phone: input.phone,
+    isEmailVerified: false,
   });
 
+  const { token, hash } = generateOpaqueToken();
+  await EmailVerificationToken.create({
+    userId: user._id,
+    tokenHash: hash,
+    expiresAt: new Date(Date.now() + env.emailVerificationTtlMs),
+  });
+
+  const verificationUrl = `${env.corsOrigin}/verify-email?token=${token}`;
+  const expiresHours = Math.round(env.emailVerificationTtlMs / (3600 * 1000));
+
+  await sendEmail({
+    to: user.email,
+    subject: "Verify your email — Bansal-nx",
+    text: `Hi ${user.firstName},\n\nWelcome to Bansal-nx! Please verify your email by opening the link below. It expires in ${expiresHours} hours.\n\n${verificationUrl}\n\nIf you did not create this account, you can safely ignore this email.`,
+    html: renderEmailVerificationHtml({
+      name: user.firstName,
+      verificationUrl,
+      expiresHours,
+    }),
+  }).catch((err: unknown) => console.error("Failed to send verification email:", err));
+
+  return {
+    message: "Registration successful. Please check your email to verify your account.",
+    email: user.email,
+    requiresVerification: true,
+  };
+}
+
+export async function verifyEmail(
+  rawToken: string,
+  meta: RequestMeta,
+): Promise<{ user: PublicUser } & SessionTokens> {
+  const hash = hashToken(rawToken);
+  const tokenDoc = await EmailVerificationToken.findOne({
+    tokenHash: hash,
+    expiresAt: { $gt: new Date() },
+  });
+
+  if (!tokenDoc) {
+    throw new UnauthorizedError("This verification link is invalid or has expired.");
+  }
+
+  const user = await User.findById(tokenDoc.userId);
+  if (!user) {
+    throw new UnauthorizedError("This account no longer exists.");
+  }
+
+  user.isEmailVerified = true;
+  user.emailVerifiedAt = new Date();
+  await user.save();
+
+  // Clean up any remaining verification tokens for this user
+  await EmailVerificationToken.deleteMany({ userId: user._id });
+
+  // Automatically sign the user in directly upon verification
   const tokens = await issueSession(user, meta);
   return { user: toPublicUser(user), ...tokens };
 }
 
-export async function loginUser(input: LoginInput, meta: RequestMeta): Promise<{ user: PublicUser } & SessionTokens> {
+export async function resendVerification(input: ResendVerificationInput): Promise<void> {
+  const user = await User.findOne({ email: input.email });
+  // If user does not exist or is already verified, return silently (enumeration guard)
+  if (!user || user.isEmailVerified) return;
+
+  await EmailVerificationToken.deleteMany({ userId: user._id });
+
+  const { token, hash } = generateOpaqueToken();
+  await EmailVerificationToken.create({
+    userId: user._id,
+    tokenHash: hash,
+    expiresAt: new Date(Date.now() + env.emailVerificationTtlMs),
+  });
+
+  const verificationUrl = `${env.corsOrigin}/verify-email?token=${token}`;
+  const expiresHours = Math.round(env.emailVerificationTtlMs / (3600 * 1000));
+
+  await sendEmail({
+    to: user.email,
+    subject: "Verify your email — Bansal-nx",
+    text: `Hi ${user.firstName},\n\nHere is your new verification link for Bansal-nx. It expires in ${expiresHours} hours.\n\n${verificationUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: renderEmailVerificationHtml({
+      name: user.firstName,
+      verificationUrl,
+      expiresHours,
+    }),
+  }).catch((err: unknown) => console.error("Failed to resend verification email:", err));
+}
+
+export async function loginUser(
+  input: LoginInput,
+  meta: RequestMeta,
+): Promise<{ user: PublicUser } & SessionTokens> {
   const user = await User.findOne({ email: input.email }).select("+passwordHash");
   if (!user || !(await comparePassword(input.password, user.passwordHash))) {
     throw new UnauthorizedError("Invalid email or password.");
@@ -123,24 +228,26 @@ export async function loginUser(input: LoginInput, meta: RequestMeta): Promise<{
   if (user.status === "blocked") {
     throw new ForbiddenError("This account has been suspended. Please contact us.");
   }
+  if (!user.isEmailVerified && user.role === "customer") {
+    throw new ForbiddenError(
+      "Please verify your email address to log in. Check your inbox for the verification link.",
+    );
+  }
 
   const tokens = await issueSession(user, meta);
   return { user: toPublicUser(user), ...tokens };
 }
 
-export async function rotateSession(rawRefreshToken: string, meta: RequestMeta): Promise<SessionTokens> {
+export async function rotateSession(
+  rawRefreshToken: string,
+  meta: RequestMeta,
+): Promise<SessionTokens> {
   const hash = hashToken(rawRefreshToken);
   const session = await Session.findOne({ refreshTokenHash: hash });
   if (!session || session.expiresAt < new Date()) {
     throw new UnauthorizedError("Invalid or expired refresh token.");
   }
 
-  // Reuse detection: a session is only ever revoked by rotation, logout, or a
-  // password reset. Seeing a *second* attempt to use one that's already
-  // revoked means either the token was stolen and the thief raced the real
-  // user, or the user's other tokens were compromised too — either way, the
-  // safe response is to kill every live session for this account, not just
-  // reject the one request.
   if (session.revokedAt) {
     await Session.updateMany({ userId: session.userId, revokedAt: null }, { revokedAt: new Date() });
     throw new UnauthorizedError("Invalid or expired refresh token.");
@@ -158,9 +265,6 @@ export async function rotateSession(rawRefreshToken: string, meta: RequestMeta):
     throw new ForbiddenError("This account has been suspended. Please contact us.");
   }
 
-  // Rotation: revoke the old session and issue a brand new one, rather than
-  // reusing the same session document — limits how long a stolen (but not
-  // yet used) refresh token stays valid.
   session.revokedAt = new Date();
   await session.save();
 
@@ -174,14 +278,11 @@ export async function revokeSession(rawRefreshToken: string | undefined): Promis
 }
 
 export async function getUserById(id: string): Promise<PublicUser | null> {
+  if (!isValidObjectId(id)) return null;
   const user = await User.findById(id);
   return user ? toPublicUser(user) : null;
 }
 
-// Always succeeds from the caller's point of view, whether or not the email
-// matches an account — ForgotPasswordPage's own copy already says "If an
-// account exists for X, a link has been sent", so the controller must never
-// let a caller distinguish the two cases (classic user-enumeration guard).
 export async function requestPasswordReset(input: ForgotPasswordInput): Promise<void> {
   const user = await User.findOne({ email: input.email });
   if (!user) return;
@@ -193,21 +294,18 @@ export async function requestPasswordReset(input: ForgotPasswordInput): Promise<
     expiresAt: new Date(Date.now() + env.passwordResetTtlMs),
   });
 
-  // sendEmail logs to the console instead of sending for real until SMTP_*
-  // is configured (see .env.example) — same behavior as before, just moved
-  // behind the shared email utility so it upgrades to real delivery for
-  // free once that's filled in.
   const resetLink = `${env.corsOrigin}/reset-password?token=${token}`;
-  // Best-effort, same as order confirmation email — a broken SMTP provider
-  // must never surface a 500 here, or it becomes an enumeration oracle: a
-  // non-existent email always returns instantly, so a send failure on a
-  // *real* account throwing would let a caller tell the two cases apart by
-  // response time/status alone.
+  const expiresMinutes = Math.round(env.passwordResetTtlMs / 60000);
+
   await sendEmail({
     to: user.email,
     subject: "Reset your Bansal-nx password",
-    text: `Hi ${user.firstName},\n\nReset your password using the link below. It expires in ${Math.round(env.passwordResetTtlMs / 60000)} minutes.\n\n${resetLink}\n\nIf you didn't request this, you can safely ignore this email.`,
-    html: `<p>Hi ${user.firstName},</p><p>Reset your password using the link below. It expires in ${Math.round(env.passwordResetTtlMs / 60000)} minutes.</p><p><a href="${resetLink}">${resetLink}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+    text: `Hi ${user.firstName},\n\nReset your password using the link below. It expires in ${expiresMinutes} minutes.\n\n${resetLink}\n\nIf you didn't request this, you can safely ignore this email.`,
+    html: renderPasswordResetHtml({
+      name: user.firstName,
+      resetUrl: resetLink,
+      expiresMinutes,
+    }),
   }).catch((err: unknown) => console.error("Failed to send password reset email:", err));
 }
 
@@ -229,14 +327,9 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
   resetToken.usedAt = new Date();
   await resetToken.save();
 
-  // A password reset is a strong signal the old credential may have been
-  // compromised — sign every other device out, same as a full logout.
   await Session.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
 }
 
-// Self-service password change (caller already authenticated) — distinct
-// from resetPassword above, which is for a caller who's locked out and using
-// an emailed token instead of their current password.
 export async function changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
   const user = await User.findById(userId).select("+passwordHash");
   if (!user) throw new UnauthorizedError("Account no longer exists.");
@@ -247,14 +340,9 @@ export async function changePassword(userId: string, input: ChangePasswordInput)
   user.passwordHash = await hashPassword(input.newPassword);
   await user.save();
 
-  // Same reasoning as resetPassword: a password change is a strong signal
-  // to invalidate every existing session, including the one that made this
-  // request — the client re-authenticates with the new password afterward.
   await Session.updateMany({ userId: user._id, revokedAt: null }, { revokedAt: new Date() });
 }
 
-// Explicit "sign out everywhere" — revokes every live session for the
-// caller without requiring a password change.
 export async function revokeAllSessions(userId: string): Promise<void> {
   await Session.updateMany({ userId, revokedAt: null }, { revokedAt: new Date() });
 }

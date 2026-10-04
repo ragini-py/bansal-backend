@@ -39,8 +39,10 @@ async function seedUsers(): Promise<void> {
       existing.phone = account.phone;
       existing.role = account.role;
       existing.status = account.status;
+      existing.isEmailVerified = true;
+      existing.emailVerifiedAt = new Date();
       await existing.save();
-      console.log(`✓ Updated existing ${key} user: ${account.email}`);
+      console.log(`✓ Updated existing ${key} user: ${account.email} (verified)`);
     } else {
       await User.create({
         email: account.email.toLowerCase(),
@@ -50,8 +52,10 @@ async function seedUsers(): Promise<void> {
         phone: account.phone,
         role: account.role,
         status: account.status,
+        isEmailVerified: true,
+        emailVerifiedAt: new Date(),
       });
-      console.log(`✓ Created new ${key} user: ${account.email}`);
+      console.log(`✓ Created new ${key} user: ${account.email} (verified)`);
     }
   }
 

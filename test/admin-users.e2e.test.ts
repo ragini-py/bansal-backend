@@ -43,6 +43,7 @@ before(async () => {
     firstName: "Cat",
     lastName: "Customer",
     phone: "9876543210",
+    isEmailVerified: true,
   });
   customerId = customer._id.toString();
   const admin = await User.create({
@@ -52,6 +53,7 @@ before(async () => {
     lastName: "Admin",
     phone: "9876543210",
     role: "admin",
+    isEmailVerified: true,
   });
   adminId = admin._id.toString();
 

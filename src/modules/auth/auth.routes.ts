@@ -10,7 +10,9 @@ import {
   forgotPasswordSchema,
   loginSchema,
   registerSchema,
+  resendVerificationSchema,
   resetPasswordSchema,
+  verifyEmailSchema,
 } from "./auth.schemas.js";
 
 export const authRouter = Router();
@@ -20,6 +22,20 @@ authRouter.post(
   limiter(env.rateLimit.registerMax, 60 * 60 * 1000, "Too many registration attempts. Please try again later."),
   validate(registerSchema),
   authController.register,
+);
+
+authRouter.post(
+  "/verify-email",
+  limiter(env.rateLimit.verifyEmailMax, 60 * 60 * 1000, "Too many verification attempts. Please try again later."),
+  validate(verifyEmailSchema),
+  authController.verifyEmail,
+);
+
+authRouter.post(
+  "/resend-verification",
+  limiter(env.rateLimit.resendVerificationMax, 60 * 60 * 1000, "Too many requests. Please try again later."),
+  validate(resendVerificationSchema),
+  authController.resendVerification,
 );
 
 authRouter.post(

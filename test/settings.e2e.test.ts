@@ -44,6 +44,7 @@ before(async () => {
     firstName: "Cat",
     lastName: "Customer",
     phone: "9876543210",
+    isEmailVerified: true,
   });
   await User.create({
     email: "settings-admin@example.com",
@@ -52,6 +53,7 @@ before(async () => {
     lastName: "Admin",
     phone: "9876543210",
     role: "admin",
+    isEmailVerified: true,
   });
 
   async function login(email: string): Promise<string> {
