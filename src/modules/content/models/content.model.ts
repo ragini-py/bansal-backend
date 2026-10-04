@@ -23,6 +23,7 @@ const contentSchema = new Schema(
       text: { type: String, default: "" },
     },
     hero: {
+      image: { type: String, default: "" },
       eyebrow: { type: String, default: "" },
       heading: { type: String, default: "" },
       subheading: { type: String, default: "" },
@@ -30,11 +31,13 @@ const contentSchema = new Schema(
       secondaryCta: { type: String, default: "" },
     },
     editorial: {
+      image: { type: String, default: "" },
       heading: { type: String, default: "" },
       caption: { type: String, default: "" },
       cta: { type: String, default: "" },
     },
     promo: {
+      image: { type: String, default: "" },
       heading: { type: String, default: "" },
       caption: { type: String, default: "" },
       cta: { type: String, default: "" },

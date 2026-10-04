@@ -10,6 +10,7 @@ export const updateContentSchema = z
   .object({
     announcement: z.object({ enabled: z.boolean(), text: z.string().max(500) }),
     hero: z.object({
+      image: z.string().max(1000).optional(),
       eyebrow: z.string().max(200),
       heading: z.string().max(200),
       subheading: z.string().max(500),
@@ -17,11 +18,13 @@ export const updateContentSchema = z
       secondaryCta: z.string().max(60),
     }),
     editorial: z.object({
+      image: z.string().max(1000).optional(),
       heading: z.string().max(200),
       caption: z.string().max(500),
       cta: z.string().max(60),
     }),
     promo: z.object({
+      image: z.string().max(1000).optional(),
       heading: z.string().max(200),
       caption: z.string().max(500),
       cta: z.string().max(60),
