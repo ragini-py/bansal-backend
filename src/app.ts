@@ -42,8 +42,19 @@ export function createApp(): Express {
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || env.corsOrigins.includes(origin)) callback(null, true);
-        else callback(new Error("Not allowed by CORS"));
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        const isAllowedExplicitly = env.corsOrigins.includes(origin);
+        const isBansalDomain = /^https?:\/\/([a-z0-9-]+\.)*bansalnx\.com$/i.test(origin);
+        const isLocalDev = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
+
+        if (isAllowedExplicitly || isBansalDomain || isLocalDev) {
+          callback(null, true);
+        } else {
+          callback(null, false);
+        }
       },
       credentials: true,
     }),
