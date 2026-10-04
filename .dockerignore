@@ -1,0 +1,13 @@
+node_modules
+dist
+.env
+.git
+.gitignore
+*.log
+npm-debug.log*
+test
+coverage
+.vscode
+.claude
+public/images/*
+!public/images/.gitkeep
