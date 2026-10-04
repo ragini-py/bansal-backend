@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bansalnx_backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    volumes:
+      - backend_uploads:/app/public/images
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      bansalnx_network:
+        aliases:
+          - backend
+
+volumes:
+  backend_uploads:
+    name: bansalnx_backend_uploads
+
+networks:
+  bansalnx_network:
+    name: bansalnx_network
+    external: true
