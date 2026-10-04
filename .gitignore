@@ -4,4 +4,6 @@ dist
 /public/images/
 /public/images/*
 !/public/images/.gitkeep
+/optimized_images/
+/test_compressed.jpg
 
