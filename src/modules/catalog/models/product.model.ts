@@ -28,6 +28,7 @@ const productSchema = new Schema(
     quantity: { type: Number, min: 0, default: 0 },
     currency: { type: String, enum: ["INR"], default: "INR" },
     images: { type: [String], default: [] },
+    imagesByColour: { type: Schema.Types.Mixed, default: {} },
     category: { type: String, trim: true, default: "" },
     categoryIds: { type: [{ type: Schema.Types.ObjectId, ref: "Category" }], default: [] },
     // Slugs of the collections this product belongs to (Collection.slug) —

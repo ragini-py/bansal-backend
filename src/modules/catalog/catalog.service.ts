@@ -70,6 +70,7 @@ export interface PublicProduct {
   quantity?: number;
   currency: "INR";
   images: string[];
+  imagesByColour?: Record<string, string[]>;
   category: string;
   categoryIds: string[];
   collections: string[];
@@ -126,6 +127,10 @@ export function toPublicProduct(doc: ProductDoc): PublicProduct {
     quantity: doc.quantity ?? 0,
     currency: doc.currency,
     images: doc.images,
+    imagesByColour:
+      doc.get("imagesByColour") instanceof Map
+        ? Object.fromEntries(doc.get("imagesByColour"))
+        : (doc.get("imagesByColour") as Record<string, string[]> | undefined) ?? {},
     category: doc.category || "",
     categoryIds: (doc.categoryIds ?? []).map((id) => id.toString()),
     collections: doc.collections,
@@ -417,6 +422,9 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
     category,
     categoryIds,
   });
+  if (input.imagesByColour !== undefined) {
+    doc.markModified("imagesByColour");
+  }
   // Keep each existing variant's _id stable (it's referenced by carts,
   // wishlists, and past orders as variantId) — only variants with no `id`
   // (newly added in the admin form) get a fresh one from Mongoose.

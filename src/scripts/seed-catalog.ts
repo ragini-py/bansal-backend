@@ -32,6 +32,10 @@ const productSeeds = [
     price: 24900,
     mrp: 32500,
     images: ["/products/p1.jpg", "/products/p5.jpg", "/products/p3.jpg"],
+    imagesByColour: {
+      Blush: ["/products/p1.jpg", "/products/p5.jpg"],
+      Ivory: ["/products/p3.jpg", "/products/p2.jpg"],
+    },
     category: "Skirt Sets",
     collections: ["the-ceremony-edit", "new-season"],
     tags: ["hand-embroidered", "festive", "pastel"],
@@ -147,6 +151,10 @@ const productSeeds = [
     price: 14900,
     mrp: 18500,
     images: ["/products/p5.jpg", "/products/p3.jpg", "/products/p1.jpg"],
+    imagesByColour: {
+      Ivory: ["/products/p5.jpg", "/products/p1.jpg"],
+      "Pearl Grey": ["/products/p3.jpg", "/products/p6.jpg"],
+    },
     category: "Kurta Sets",
     collections: ["new-season", "quiet-hours"],
     tags: ["chikankari", "cotton", "day"],
