@@ -334,7 +334,14 @@ export async function listProducts(
   }
 
   const docs = await cursor;
-  return { products: docs.map(toPublicProduct), total, page, limit };
+  const sortedDocs = [...docs].sort((a, b) => {
+    const aHasVariants = Array.isArray(a.variants) && a.variants.length > 0;
+    const bHasVariants = Array.isArray(b.variants) && b.variants.length > 0;
+    const aOut = aHasVariants ? (a.variants.some((v) => v.availability === "available") ? 0 : 1) : 0;
+    const bOut = bHasVariants ? (b.variants.some((v) => v.availability === "available") ? 0 : 1) : 0;
+    return aOut - bOut;
+  });
+  return { products: sortedDocs.map(toPublicProduct), total, page, limit };
 }
 
 export async function getProductBySlug(slug: string): Promise<PublicProduct> {
