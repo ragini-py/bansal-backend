@@ -29,6 +29,7 @@ export const updateProductSchema = z.object({
   quantity: z.number().int().min(0).optional(),
   currency: z.literal("INR"),
   images: z.array(z.string().trim()).default([]),
+  imagesByColour: z.record(z.string(), z.array(z.string().trim())).optional(),
   category: z.string().trim().optional(),
   categoryIds: z.array(z.string().trim().min(1)).optional(),
   collections: z.array(z.string().trim().min(1)),
