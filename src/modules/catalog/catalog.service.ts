@@ -224,7 +224,27 @@ export async function listProducts(
     }
   }
   if (query.collection) {
-    filter.collections = new RegExp(`^${escapeRegex(query.collection.trim())}$`, "i");
+    const trimmed = query.collection.trim();
+    const matchedCol = await Collection.findOne({
+      $or: [
+        { slug: slugify(trimmed) },
+        { slug: trimmed },
+        ...(isValidObjectId(trimmed) ? [{ _id: new Types.ObjectId(trimmed) }] : []),
+      ],
+    });
+    const colProductIds = matchedCol?.productIds ?? [];
+    const validObjectIds = colProductIds
+      .filter((id) => isValidObjectId(id))
+      .map((id) => new Types.ObjectId(id));
+
+    andClauses.push({
+      $or: [
+        { collections: new RegExp(`^${escapeRegex(trimmed)}$`, "i") },
+        ...(matchedCol ? [{ collections: matchedCol.slug }] : []),
+        ...(validObjectIds.length > 0 ? [{ _id: { $in: validObjectIds } }] : []),
+        ...(colProductIds.length > 0 ? [{ slug: { $in: colProductIds } }] : []),
+      ],
+    });
   }
   if (query.material) filter.material = new RegExp(`^${escapeRegex(query.material.trim())}$`, "i");
   if (query.clothMaterial)
