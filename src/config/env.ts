@@ -38,6 +38,10 @@ const schema = z.object({
     }, z.boolean())
     .optional(),
   EMAIL_FROM: z.string().optional(),
+
+  // Google OAuth 2.0
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -78,6 +82,10 @@ export const env = {
     email: parsed.data.SHIPROCKET_EMAIL,
     password: parsed.data.SHIPROCKET_PASSWORD,
     pickupPincode: parsed.data.SHIPROCKET_PICKUP_PINCODE,
+  },
+  google: {
+    clientId: parsed.data.GOOGLE_CLIENT_ID?.trim() || "",
+    clientSecret: parsed.data.GOOGLE_CLIENT_SECRET?.trim() || "",
   },
   smtp:
     !isTest && parsed.data.SMTP_HOST && parsed.data.SMTP_USER && parsed.data.SMTP_PASS

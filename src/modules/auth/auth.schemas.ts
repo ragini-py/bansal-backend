@@ -53,3 +53,14 @@ export const resendVerificationSchema = z.object({
 });
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 
+export const googleAuthSchema = z
+  .object({
+    idToken: z.string().optional(),
+    token: z.string().optional(),
+    credential: z.string().optional(),
+  })
+  .refine((data) => Boolean((data.idToken && data.idToken.trim()) || (data.token && data.token.trim()) || (data.credential && data.credential.trim())), {
+    message: "Google token or credential is required",
+  });
+export type GoogleAuthInput = z.infer<typeof googleAuthSchema>;
+

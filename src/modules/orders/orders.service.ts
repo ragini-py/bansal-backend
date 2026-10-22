@@ -1,12 +1,21 @@
 import { ConflictError, ForbiddenError, NotFoundError } from "../../common/app-error.js";
 import { env } from "../../config/env.js";
 import { sendEmail } from "../../utils/email.js";
+import {
+  renderCustomerOrderConfirmedEmail,
+  renderAdminNewOrderAlertEmail,
+  renderCustomerOrderStatusUpdateEmail,
+  renderAdminOrderStatusUpdateEmail,
+  renderCustomerOrderCancelledEmail,
+  renderAdminOrderCancelledEmail,
+  type OrderEmailData,
+} from "../../utils/email-templates.js";
 import { type AuditActor, recordAudit } from "../audit/audit.service.js";
 import { User } from "../auth/models/index.js";
 import { Product } from "../catalog/models/index.js";
 import { priceCoupon } from "../coupons/coupons.service.js";
 import { Coupon } from "../coupons/models/coupon.model.js";
-import { getPricingSettings } from "../settings/settings.service.js";
+import { getPricingSettings, getSettings } from "../settings/settings.service.js";
 import { Order, type OrderDoc } from "./models/order.model.js";
 import type { CreateOrderInput, RequestReturnInput, UpdateOrderInput } from "./orders.schemas.js";
 
@@ -116,6 +125,229 @@ export function toPublicOrder(doc: OrderDoc): PublicOrder {
       ? { ...o.returnRequest, requestedAt: o.returnRequest.requestedAt.toISOString() }
       : null,
   };
+}
+
+function toOrderEmailData(doc: OrderDoc): OrderEmailData {
+  const o = doc.toObject() as unknown as PlainOrder;
+  const addr = (o.address || {}) as Record<string, unknown>;
+  return {
+    id: doc._id.toString(),
+    customerName: o.customerName,
+    email: o.email,
+    phone: o.phone,
+    lines: (o.lines || []).map((l) => ({
+      name: l.name,
+      size: l.size,
+      colour: l.colour,
+      quantity: l.quantity,
+      price: l.price,
+      image: l.image,
+    })),
+    subtotal: o.subtotal,
+    discount: o.discount,
+    shippingFee: o.shippingFee,
+    total: o.total,
+    status: o.status,
+    payment: {
+      method: String(o.payment?.method || "online"),
+      status: String(o.payment?.status || "pending"),
+      amount: Number(o.payment?.amount || o.total),
+    },
+    address: {
+      fullName: typeof addr.fullName === "string" ? addr.fullName : o.customerName,
+      phone: typeof addr.phone === "string" ? addr.phone : o.phone,
+      line1: typeof addr.line1 === "string" ? addr.line1 : "",
+      locality: typeof addr.locality === "string" ? addr.locality : "",
+      city: typeof addr.city === "string" ? addr.city : "",
+      state: typeof addr.state === "string" ? addr.state : "",
+      pincode: typeof addr.pincode === "string" ? addr.pincode : "",
+      country: typeof addr.country === "string" ? addr.country : "India",
+    },
+    shipment: {
+      courier: o.shipment?.courier ?? null,
+      awb: o.shipment?.awb ?? null,
+      trackingUrl: o.shipment?.trackingUrl ?? null,
+      estimatedDelivery: o.shipment?.estimatedDelivery ?? null,
+    },
+  };
+}
+
+async function getAdminNotificationEmails(): Promise<string[]> {
+  const emails = new Set<string>();
+
+  // 1. Explicit env configuration if provided
+  if (process.env.ADMIN_NOTIFICATION_EMAIL) {
+    process.env.ADMIN_NOTIFICATION_EMAIL.split(",").forEach((e) => {
+      const trimmed = e.trim().toLowerCase();
+      if (trimmed) emails.add(trimmed);
+    });
+  }
+  if (process.env.ADMIN_EMAIL) {
+    process.env.ADMIN_EMAIL.split(",").forEach((e) => {
+      const trimmed = e.trim().toLowerCase();
+      if (trimmed) emails.add(trimmed);
+    });
+  }
+
+  // 2. Store settings support email
+  try {
+    const settings = await getSettings();
+    if (settings.supportEmail) emails.add(settings.supportEmail.trim().toLowerCase());
+  } catch {
+    // Ignore settings fetch error
+  }
+
+  // 3. Registered Admin users in DB
+  try {
+    const adminDocs = await User.find({ role: "admin", status: "active" }).select("email").lean();
+    for (const a of adminDocs) {
+      if (a.email) emails.add(a.email.trim().toLowerCase());
+    }
+  } catch {
+    // Ignore user lookup error
+  }
+
+  if (emails.size === 0) {
+    emails.add("care@bansalnx.com");
+  }
+
+  return Array.from(emails);
+}
+
+async function notifyOrderPlaced(doc: OrderDoc): Promise<void> {
+  const emailData = toOrderEmailData(doc);
+  const trackingUrl = `${env.corsOrigin}/track?id=${encodeURIComponent(emailData.id)}&email=${encodeURIComponent(emailData.email)}`;
+  const adminOrderUrl = `${env.corsOrigin}/admin`;
+
+  // 1. Send confirmation to Customer
+  try {
+    const custEmail = renderCustomerOrderConfirmedEmail({ order: emailData, trackingUrl });
+    await sendEmail({
+      to: emailData.email,
+      subject: custEmail.subject,
+      html: custEmail.html,
+      text: custEmail.text,
+    });
+  } catch (err) {
+    console.error(`[email] Failed to send order confirmation to customer (${emailData.email}):`, err);
+  }
+
+  // 2. Send new order alert to Admin(s)
+  try {
+    const adminEmails = await getAdminNotificationEmails();
+    const adminEmail = renderAdminNewOrderAlertEmail({ order: emailData, adminOrderUrl });
+    for (const to of adminEmails) {
+      await sendEmail({
+        to,
+        subject: adminEmail.subject,
+        html: adminEmail.html,
+        text: adminEmail.text,
+      });
+    }
+  } catch (err) {
+    console.error(`[email] Failed to send new order alert to admins:`, err);
+  }
+}
+
+async function notifyOrderStatusUpdated(
+  doc: OrderDoc,
+  oldStatus: string,
+  newStatus: string,
+  actor: AuditActor,
+): Promise<void> {
+  const emailData = toOrderEmailData(doc);
+  const trackingUrl = `${env.corsOrigin}/track?id=${encodeURIComponent(emailData.id)}&email=${encodeURIComponent(emailData.email)}`;
+  const adminOrderUrl = `${env.corsOrigin}/admin`;
+  const actorName = actor.id || "Store Admin";
+
+  // 1. Notify Customer
+  try {
+    const custEmail = renderCustomerOrderStatusUpdateEmail({
+      order: emailData,
+      oldStatus,
+      newStatus,
+      trackingUrl,
+    });
+    await sendEmail({
+      to: emailData.email,
+      subject: custEmail.subject,
+      html: custEmail.html,
+      text: custEmail.text,
+    });
+  } catch (err) {
+    console.error(`[email] Failed to send status update email to customer (${emailData.email}):`, err);
+  }
+
+  // 2. Notify Admin(s)
+  try {
+    const adminEmails = await getAdminNotificationEmails();
+    const adminEmail = renderAdminOrderStatusUpdateEmail({
+      order: emailData,
+      oldStatus,
+      newStatus,
+      actorName,
+      adminOrderUrl,
+    });
+    for (const to of adminEmails) {
+      await sendEmail({
+        to,
+        subject: adminEmail.subject,
+        html: adminEmail.html,
+        text: adminEmail.text,
+      });
+    }
+  } catch (err) {
+    console.error(`[email] Failed to send status update email to admins:`, err);
+  }
+}
+
+async function notifyOrderCancelled(
+  doc: OrderDoc,
+  reason: string,
+  actor: AuditActor,
+): Promise<void> {
+  const emailData = toOrderEmailData(doc);
+  const trackingUrl = `${env.corsOrigin}/track?id=${encodeURIComponent(emailData.id)}&email=${encodeURIComponent(emailData.email)}`;
+  const adminOrderUrl = `${env.corsOrigin}/admin`;
+  const actorName = actor.id || "Customer";
+
+  // 1. Notify Customer
+  try {
+    const custEmail = renderCustomerOrderCancelledEmail({
+      order: emailData,
+      reason,
+      trackingUrl,
+    });
+    await sendEmail({
+      to: emailData.email,
+      subject: custEmail.subject,
+      html: custEmail.html,
+      text: custEmail.text,
+    });
+  } catch (err) {
+    console.error(`[email] Failed to send cancellation email to customer (${emailData.email}):`, err);
+  }
+
+  // 2. Notify Admin(s)
+  try {
+    const adminEmails = await getAdminNotificationEmails();
+    const adminEmail = renderAdminOrderCancelledEmail({
+      order: emailData,
+      reason,
+      actorName,
+      adminOrderUrl,
+    });
+    for (const to of adminEmails) {
+      await sendEmail({
+        to,
+        subject: adminEmail.subject,
+        html: adminEmail.html,
+        text: adminEmail.text,
+      });
+    }
+  } catch (err) {
+    console.error(`[email] Failed to send cancellation email to admins:`, err);
+  }
 }
 
 export async function createOrder(
@@ -290,16 +522,10 @@ export async function createOrder(
     throw err;
   }
 
-  // Best-effort — a broken email provider must never fail an already-placed
-  // order. sendEmail itself logs to the console until SMTP_* is configured.
-  const orderNumber = doc._id.toString();
-  const itemLines = lines.map((l) => `  ${l.quantity} x ${l.name} (${l.size}, ${l.colour})`).join("\n");
-  sendEmail({
-    to: doc.email,
-    subject: `Your Bansal-nx order ${orderNumber} is confirmed`,
-    text: `Hi ${doc.customerName},\n\nThanks for your order! Here's a summary:\n\n${itemLines}\n\nSubtotal: Rs. ${subtotal.toLocaleString("en-IN")}\nDiscount: Rs. ${discount.toLocaleString("en-IN")}\nTotal: Rs. ${total.toLocaleString("en-IN")}\n\nTrack your order: ${env.corsOrigin}/track?id=${orderNumber}&email=${encodeURIComponent(doc.email)}`,
-    html: `<p>Hi ${doc.customerName},</p><p>Thanks for your order! Here's a summary:</p><pre>${itemLines}</pre><p>Subtotal: &#8377;${subtotal.toLocaleString("en-IN")}<br/>Discount: &#8377;${discount.toLocaleString("en-IN")}<br/>Total: &#8377;${total.toLocaleString("en-IN")}</p><p><a href="${env.corsOrigin}/track?id=${orderNumber}&email=${encodeURIComponent(doc.email)}">Track your order</a></p>`,
-  }).catch((err: unknown) => console.error("Failed to send order confirmation email:", err));
+  // Dispatches both rich customer receipt and store admin alert
+  notifyOrderPlaced(doc).catch((err: unknown) =>
+    console.error("[email] Failed to dispatch order placement notifications:", err),
+  );
 
   return toPublicOrder(doc);
 }
@@ -411,6 +637,9 @@ export async function updateOrder(
       before: { status: beforeStatus },
       after: { status: doc.status },
     });
+    notifyOrderStatusUpdated(doc, beforeStatus, doc.status, actor).catch((err: unknown) =>
+      console.error("[email] Failed to dispatch order status update notifications:", err),
+    );
   }
   if (doc.payment.refundStatus !== beforeRefundStatus) {
     await recordAudit({
@@ -456,7 +685,12 @@ export async function requestReturn(
 // cancellation depends on whether it was already paid.
 const CANCELLABLE_STATUSES = new Set(["confirmed", "processing", "packed", "ready_for_pickup"]);
 
-export async function cancelOrder(id: string, userId: string, actor: AuditActor): Promise<PublicOrder> {
+export async function cancelOrder(
+  id: string,
+  userId: string,
+  actor: AuditActor,
+  reason?: string,
+): Promise<PublicOrder> {
   const doc = await Order.findById(id);
   if (!doc) throw new NotFoundError("Order not found.");
   if (doc.userId !== userId) throw new ForbiddenError("This isn't your order.");
@@ -469,7 +703,8 @@ export async function cancelOrder(id: string, userId: string, actor: AuditActor)
 
   doc.status = "cancelled";
   doc.payment.status = wasPaid ? "refunded" : "cancelled";
-  doc.shipment.events.push({ status: "cancelled", label: "Cancelled", at: new Date() });
+  const cancelLabel = reason ? `Cancelled: ${reason}` : "Cancelled by customer";
+  doc.shipment.events.push({ status: "cancelled", label: cancelLabel, at: new Date() });
   await doc.save();
 
   await recordAudit({
@@ -480,6 +715,10 @@ export async function cancelOrder(id: string, userId: string, actor: AuditActor)
     before: { status: beforeStatus, paymentStatus: wasPaid ? "paid" : doc.payment.status },
     after: { status: doc.status, paymentStatus: doc.payment.status },
   });
+
+  notifyOrderCancelled(doc, cancelLabel, actor).catch((err: unknown) =>
+    console.error("[email] Failed to dispatch order cancellation notifications:", err),
+  );
 
   return toPublicOrder(doc);
 }

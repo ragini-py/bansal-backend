@@ -1,4 +1,3 @@
-import { AppError } from "../../common/app-error.js";
 import type { Request, Response } from "express";
 import { getSettings } from "../settings/settings.service.js";
 import { sendEmail } from "../../utils/email.js";
@@ -16,12 +15,8 @@ export async function submit(req: Request, res: Response): Promise<void> {
       text: `Name: ${name}\nEmail: ${email}\nSubject: ${subject}\n\n${message}`,
       html: renderContactFormHtml({ name, email, subject, message }),
     },
-    { logFallback: false },
+    { logFallback: true },
   );
 
-  if (!delivered) {
-    throw new AppError(503, "CONTACT_DELIVERY_UNAVAILABLE", "We couldn't deliver your message right now.");
-  }
-
-  res.status(202).json({ success: true });
+  res.status(202).json({ success: true, delivered });
 }

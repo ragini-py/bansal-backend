@@ -8,6 +8,7 @@ import * as authController from "./auth.controller.js";
 import {
   changePasswordSchema,
   forgotPasswordSchema,
+  googleAuthSchema,
   loginSchema,
   registerSchema,
   resendVerificationSchema,
@@ -43,6 +44,13 @@ authRouter.post(
   limiter(env.rateLimit.loginMax, 15 * 60 * 1000, "Too many login attempts. Please try again in 15 minutes."),
   validate(loginSchema),
   authController.login,
+);
+
+authRouter.post(
+  "/google",
+  limiter(env.rateLimit.loginMax * 4, 15 * 60 * 1000, "Too many Google sign-in attempts. Please try again later."),
+  validate(googleAuthSchema),
+  authController.googleAuth,
 );
 
 authRouter.post("/refresh", verifyCsrf, authController.refresh);

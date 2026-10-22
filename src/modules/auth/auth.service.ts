@@ -16,6 +16,7 @@ import {
   User,
   type UserDoc,
 } from "./models/index.js";
+import { verifyGoogleToken } from "./google.service.js";
 import type {
   ChangePasswordInput,
   ForgotPasswordInput,
@@ -75,9 +76,9 @@ export function toPublicUser(user: UserDoc): PublicUser {
   return {
     id: user._id.toString(),
     firstName: user.firstName,
-    lastName: user.lastName,
+    lastName: user.lastName ?? "",
     email: user.email,
-    phone: user.phone,
+    phone: user.phone ?? "",
     role: user.role,
     status: user.status,
     isEmailVerified: user.isEmailVerified ?? false,
@@ -222,7 +223,7 @@ export async function loginUser(
   meta: RequestMeta,
 ): Promise<{ user: PublicUser } & SessionTokens> {
   const user = await User.findOne({ email: input.email }).select("+passwordHash");
-  if (!user || !(await comparePassword(input.password, user.passwordHash))) {
+  if (!user || !user.passwordHash || !(await comparePassword(input.password, user.passwordHash))) {
     throw new UnauthorizedError("Invalid email or password.");
   }
   if (user.status === "blocked") {
@@ -232,6 +233,49 @@ export async function loginUser(
     throw new ForbiddenError(
       "Please verify your email address to log in. Check your inbox for the verification link.",
     );
+  }
+
+  const tokens = await issueSession(user, meta);
+  return { user: toPublicUser(user), ...tokens };
+}
+
+export async function loginOrRegisterWithGoogle(
+  idToken: string,
+  meta: RequestMeta,
+): Promise<{ user: PublicUser } & SessionTokens> {
+  const googleUser = await verifyGoogleToken(idToken);
+
+  let user = await User.findOne({ email: googleUser.email });
+
+  if (user) {
+    if (user.status === "blocked") {
+      throw new ForbiddenError("This account has been suspended. Please contact us.");
+    }
+    if (!user.googleId) {
+      user.googleId = googleUser.googleId;
+    }
+    if (!user.isEmailVerified && googleUser.emailVerified) {
+      user.isEmailVerified = true;
+      user.emailVerifiedAt = new Date();
+    }
+    if (!user.avatar && googleUser.picture) {
+      user.avatar = googleUser.picture;
+    }
+    await user.save();
+  } else {
+    user = await User.create({
+      email: googleUser.email,
+      firstName: googleUser.firstName,
+      lastName: googleUser.lastName,
+      phone: "",
+      role: "customer",
+      status: "active",
+      googleId: googleUser.googleId,
+      avatar: googleUser.picture || null,
+      authProvider: "google",
+      isEmailVerified: googleUser.emailVerified,
+      emailVerifiedAt: googleUser.emailVerified ? new Date() : null,
+    });
   }
 
   const tokens = await issueSession(user, meta);
@@ -333,7 +377,7 @@ export async function resetPassword(input: ResetPasswordInput): Promise<void> {
 export async function changePassword(userId: string, input: ChangePasswordInput): Promise<void> {
   const user = await User.findById(userId).select("+passwordHash");
   if (!user) throw new UnauthorizedError("Account no longer exists.");
-  if (!(await comparePassword(input.currentPassword, user.passwordHash))) {
+  if (!user.passwordHash || !(await comparePassword(input.currentPassword, user.passwordHash))) {
     throw new UnauthorizedError("Current password is incorrect.");
   }
 

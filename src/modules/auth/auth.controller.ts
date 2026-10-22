@@ -54,6 +54,18 @@ export async function login(req: Request, res: Response): Promise<void> {
   res.json({ user, accessToken, csrfToken });
 }
 
+export async function googleAuth(req: Request, res: Response): Promise<void> {
+  const body = req.body as { idToken?: string; token?: string; credential?: string };
+  const rawToken = (body.idToken || body.token || body.credential) as string;
+  const { user, accessToken, refreshToken } = await authService.loginOrRegisterWithGoogle(
+    rawToken,
+    requestMeta(req),
+  );
+  setRefreshCookie(res, refreshToken);
+  const csrfToken = setCsrfCookie(res);
+  res.json({ user, accessToken, csrfToken });
+}
+
 export async function refresh(req: Request, res: Response): Promise<void> {
   const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
   if (!token) throw new UnauthorizedError("No refresh token.");

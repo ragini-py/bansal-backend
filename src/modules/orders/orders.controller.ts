@@ -39,7 +39,8 @@ export async function requestReturn(req: Request<{ id: string }>, res: Response)
 
 export async function cancel(req: Request<{ id: string }>, res: Response): Promise<void> {
   const { sub } = req.user as AccessTokenPayload;
-  const order = await ordersService.cancelOrder(req.params.id, sub, { id: sub, ...requestMeta(req) });
+  const reason = typeof req.body?.reason === "string" ? req.body.reason : undefined;
+  const order = await ordersService.cancelOrder(req.params.id, sub, { id: sub, ...requestMeta(req) }, reason);
   res.json({ order });
 }
 
