@@ -11,7 +11,7 @@ async function run() {
       console.log(`SL #${i}: NOT FOUND`);
       continue;
     }
-    console.log(`SL #${i} | ${p.name} | ${p.slug} | Cat: ${p.category} | Colours: ${JSON.stringify(p.colours)} | Img: https://bansalnx.com${p.images?.[0]}`);
+    console.log(`SL #${i} | ${p.name} | ${p.slug} | Cat: ${p.category} | Colours: ${JSON.stringify(p.colours)} | Img: https://bansalnx.in${p.images?.[0]}`);
   }
   await mongoose.disconnect();
 }

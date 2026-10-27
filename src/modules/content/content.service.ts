@@ -7,30 +7,33 @@ import type { UpdateContentInput } from "./content.schemas.js";
 const DEFAULT_CONTENT = {
   announcement: {
     enabled: true,
-    text: "Complimentary shipping on orders above ₹25,000 · Made to order in India",
+    text: "Bansal NX · 15+ Years of Manufacturing Excellence · Serving 1,000+ Retailers Across India & Overseas",
   },
   hero: {
-    eyebrow: "Autumn Ceremony 2026",
-    heading: "An heirloom in the making",
+    eyebrow: "15+ Years of Experience",
+    heading: "Redefining Women's Fashion",
     subheading:
-      "Hand-embroidered silks and handloom weaves, made to order in our Jaipur studio for the women who wear them.",
+      "Manufacturer of premium ethnic & contemporary wear in Kolkata. Combining elegance, comfort, and evolving fashion trends.",
     primaryCta: "SHOP NOW",
-    secondaryCta: "EXPLORE COLLECTIONS",
+    secondaryCta: "ABOUT US",
   },
   editorial: {
     heading: "CRAFTED FOR THE EXTRAORDINARY YOU",
-    caption: "Four hundred hours of hand work in a single ceremonial piece.",
+    caption:
+      "Every collection reflects confidence, individuality, and refined style — from design and manufacturing to the finished garment.",
     cta: "DISCOVER THE COLLECTION",
   },
   promo: {
-    heading: "MAKE AN ENTRANCE",
-    caption: "The Ceremony Edit — weighted silks, ceremonial colour, hand zardozi.",
-    cta: "SHOP THE EDIT",
+    heading: "INTRODUCING CHAMAK — BY BANSAL NX",
+    caption:
+      "A premium women's fashion brand celebrating Indian craftsmanship with a contemporary design approach for today's modern woman.",
+    cta: "EXPLORE CHAMAK",
   },
   story: {
-    heading: "Made by hand, for a lifetime",
-    body: "Bansal-nx began in a single room in Jaipur with three karigars and one conviction: that a garment should outlive its occasion. Every piece is drawn by hand, embroidered by the same artisans who trained under our founder, and finished only when it is right. We make in small numbers, to order, and we sign nothing we would not keep.",
-    cta: "OUR STORY",
+    heading: "Over 15 Years of Craftsmanship & Timeless Design",
+    body:
+      "BANSAL NX has been redefining women's fashion for over 15 years with a commitment to quality, craftsmanship, and timeless design. As a manufacturer of premium ethnic and contemporary wear, we create collections that combine elegance, comfort, and evolving fashion trends. To extend our design philosophy to a wider audience, we introduced CHAMAK, a premium women's fashion brand that celebrates Indian craftsmanship with a contemporary design approach. Every CHAMAK collection is thoughtfully created to deliver exceptional quality, elegance, and style for today's modern woman.",
+    cta: "ABOUT US",
   },
   sections: [
     { key: "collections", label: "Featured Collections", visible: true },

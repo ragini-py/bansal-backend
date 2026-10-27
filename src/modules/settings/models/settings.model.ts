@@ -10,7 +10,7 @@ const settingsSchema = new Schema(
     singleton: { type: Boolean, default: true, unique: true },
     brandName: { type: String, default: "Bansal-nx" },
     tagline: { type: String, default: "CRAFTED FOR THE EXTRAORDINARY YOU" },
-    supportEmail: { type: String, default: "support@bansal-nx.com" },
+    supportEmail: { type: String, default: "support@bansalnx.in" },
     supportPhone: { type: String, default: "+91 98110 45500" },
     codEnabled: { type: Boolean, default: true },
     razorpayEnabled: { type: Boolean, default: true },

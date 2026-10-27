@@ -208,7 +208,7 @@ async function getAdminNotificationEmails(): Promise<string[]> {
   }
 
   if (emails.size === 0) {
-    emails.add("care@bansalnx.com");
+    emails.add("care@bansalnx.in");
   }
 
   return Array.from(emails);
@@ -547,13 +547,14 @@ export async function listAllOrders(): Promise<PublicOrder[]> {
 // empty array, so nothing can leave them via this endpoint — cancellation
 // and returns are separate, purpose-built endpoints/flows, not generic
 // status edits.
+// Order status transitions allowed for manual self-shipping and administrative fulfillment.
 const ORDER_STATUS_TRANSITIONS: Record<string, string[]> = {
   confirmed: ["processing", "cancelled"],
-  processing: ["packed", "cancelled"],
-  packed: ["ready_for_pickup", "cancelled"],
+  processing: ["packed", "ready_for_pickup", "cancelled"],
+  packed: ["ready_for_pickup", "shipped", "cancelled"],
   ready_for_pickup: ["shipped", "cancelled"],
-  shipped: ["in_transit", "ndr", "rto", "lost"],
-  in_transit: ["out_for_delivery", "ndr", "rto", "lost"],
+  shipped: ["in_transit", "out_for_delivery", "delivered", "ndr", "rto", "lost"],
+  in_transit: ["out_for_delivery", "delivered", "ndr", "rto", "lost"],
   out_for_delivery: ["delivered", "delivery_failed", "ndr", "rto"],
   delivery_failed: ["out_for_delivery", "rto"],
   ndr: ["out_for_delivery", "rto"],
@@ -626,6 +627,35 @@ export async function updateOrder(
   const { version: _expectedVersion, ...fields } = patch;
   void _expectedVersion;
   doc.set(fields);
+
+  if (patch.status && patch.status !== beforeStatus) {
+    const existingEvents = doc.shipment?.events ?? [];
+    const hasRecent = existingEvents.some(
+      (e) => e.status === patch.status && Math.abs(new Date(e.at).getTime() - Date.now()) < 30000,
+    );
+    if (!hasRecent) {
+      let eventLabel = `Status updated to ${patch.status}`;
+      if (patch.status === "confirmed") eventLabel = "Order confirmed & received at Kolkata atelier";
+      if (patch.status === "processing") eventLabel = "In tailoring & handcrafted preparation at Kolkata atelier";
+      if (patch.status === "packed") eventLabel = "Garments packed & quality checked at Kolkata atelier";
+      if (patch.status === "ready_for_pickup") eventLabel = "Ready for self-shipping dispatch";
+      if (patch.status === "shipped")
+        eventLabel = `Dispatched via ${doc.shipment?.courier || "Express Courier"}${doc.shipment?.awb ? ` · Tracking #: ${doc.shipment.awb}` : ""}`;
+      if (patch.status === "in_transit") eventLabel = "Shipment in transit to destination";
+      if (patch.status === "out_for_delivery") eventLabel = "Out for delivery to recipient";
+      if (patch.status === "delivered") eventLabel = "Order successfully delivered to customer";
+      if (patch.status === "cancelled") eventLabel = "Order cancelled";
+
+      doc.shipment.events.push({
+        status: patch.status,
+        label: eventLabel,
+        location: "Kolkata Atelier",
+        at: new Date(),
+        note: doc.shipment?.awb ? `Tracking / AWB: ${doc.shipment.awb}` : "Self-shipping dispatch by Bansal NX",
+      });
+    }
+  }
+
   await doc.save();
 
   if (patch.status && patch.status !== beforeStatus) {

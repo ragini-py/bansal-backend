@@ -166,7 +166,7 @@ describe("settings (against a real MongoDB instance)", () => {
     const body = await readJson(res);
     assert.equal(res.status, 200);
     assert.equal(body.available, true);
-    assert.equal(body.provider, "shiprocket");
-    assert.equal(body.mode, "demo");
+    assert.equal(body.provider, "kolkata_atelier");
+    assert.equal(body.mode, "live");
   });
 });

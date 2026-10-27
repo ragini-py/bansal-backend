@@ -14,7 +14,7 @@ export const SEEDED_ACCOUNTS = {
     status: "active" as const,
   },
   user: {
-    email: "user@bansalnx.com",
+    email: "user@bansalnx.in",
     password: "User@12345",
     firstName: "Priya",
     lastName: "Sharma",

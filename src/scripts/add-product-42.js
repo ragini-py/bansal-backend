@@ -54,12 +54,12 @@ async function main() {
     badge: "exclusive",
     shortDescription: "Handcrafted Raw Silk Co-ord Set with Embellished Pockets · Bespoke Order",
     description:
-      "BANSAL(4018) by Bansal-nx. Tailored raw silk tunic top featuring opulent hand-embroidered pocket detailing and split-sleeve accents, paired with tapered trousers trimmed in gold tissue zari borders. Currently sold out in ready-to-wear; available on bespoke custom order from our Jaipur studio.",
+      "BANSAL(4018) by Bansal-nx. Tailored raw silk tunic top featuring opulent hand-embroidered pocket detailing and split-sleeve accents, paired with tapered trousers trimmed in gold tissue zari borders. Currently sold out in ready-to-wear; available on bespoke custom order from our Kolkata studio.",
     details: [
       "Fabric: Pure Raw Silk with Gold Tissue Zari Border",
       "Work: Handcrafted Zardozi & Resham Pocket Detailing",
       "Fit: Structured Tunic Top & Tapered Trouser Set",
-      "Origin: Handcrafted in Jaipur Studio",
+      "Origin: Handcrafted in Kolkata Studio",
       "Status: Out of Stock / Available on Bespoke Order",
     ],
     care: [

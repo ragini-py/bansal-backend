@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import fs from "node:fs";
 import path from "node:path";
 
-const API_BASE = "https://bansalnx.com/api";
+const API_BASE = "https://bansalnx.in/api";
 const OPTIMIZED_DIR = "c:/Users/DEBANEEK SAHA/Downloads/bansal nx/optimized_final";
 const PROGRESS_FILE = "c:/Users/DEBANEEK SAHA/Downloads/bansal nx/upload_progress.json";
 const MONGODB_URI = "mongodb+srv://bansalnxindia_db_user:043o77sdz5ayds5S@cluster0.sxdyihx.mongodb.net/?appName=Cluster0";

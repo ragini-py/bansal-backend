@@ -47,7 +47,7 @@ const productSeeds = [
       "Hand-embroidered organza with resham and sequin work",
       "Structured blouse with concealed hook fastening",
       "Includes skirt, blouse and dupatta",
-      "Made to order in our Jaipur studio",
+      "Made to order in our Kolkata studio",
     ],
     care: ["Dry clean only", "Store in the muslin bag provided", "Avoid direct sunlight and perfume"],
     sizes: SIZES,

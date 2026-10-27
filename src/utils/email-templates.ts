@@ -120,19 +120,19 @@ function baseEmailLayout({
                 <tr>
                   <td align="center" style="padding-bottom: 12px;">
                     <span style="font-family: 'Cinzel', Georgia, serif; font-size: 13px; font-weight: 600; letter-spacing: 1.5px; color: #112c2e; text-transform: uppercase;">
-                      Bansal-nx Boutique
+                      Bansal NX Atelier &amp; Studio
                     </span>
                   </td>
                 </tr>
                 <tr>
-                  <td align="center" style="font-size: 12px; line-height: 18px; color: #7a8487; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding-bottom: 12px;">
-                    Kolkata, West Bengal, India<br>
-                    Need assistance? Contact our concierge at <a href="mailto:care@bansalnx.com" style="color: #c6903c; text-decoration: none; font-weight: 500;">care@bansalnx.com</a>
+                  <td align="center" style="font-size: 12px; line-height: 19px; color: #7a8487; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding-bottom: 12px;">
+                    2nd Flr, Rm No. 38, 134/1, Mahatma Gandhi Rd, Central Avenue, Kolutolla, Kolkata, West Bengal 700073<br>
+                    Website: <a href="https://bansalnx.in" style="color: #c6903c; text-decoration: none; font-weight: 600;">bansalnx.in</a> &middot; Concierge: <a href="mailto:care@bansalnx.in" style="color: #c6903c; text-decoration: none; font-weight: 500;">care@bansalnx.in</a>
                   </td>
                 </tr>
                 <tr>
                   <td align="center" style="font-size: 11px; line-height: 16px; color: #a2abae; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-                    &copy; ${new Date().getFullYear()} Bansal-nx. All rights reserved.
+                    &copy; ${new Date().getFullYear()} Bansal NX (bansalnx.in). All rights reserved.
                   </td>
                 </tr>
               </table>
@@ -397,7 +397,7 @@ export interface OrderEmailData {
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   confirmed: "Order Confirmed",
-  processing: "Processing in Jaipur Atelier",
+  processing: "Processing in Kolkata Atelier",
   packed: "Packed in Regal Box",
   ready_for_pickup: "Ready for Courier Collection",
   shipped: "Dispatched",
@@ -495,7 +495,7 @@ export function renderCustomerOrderConfirmedEmail({
       <tr>
         <td style="padding: 12px 0 20px 0; font-size: 15px; line-height: 24px; color: #4e595c;">
           Dear <strong>${safeName}</strong>,<br>
-          We have received your bespoke order <strong>#${safeId}</strong>. Our Jaipur artisans and master tailors have begun preparing your pieces with the utmost attention to detail.
+          We have received your bespoke order <strong>#${safeId}</strong>. Our Kolkata artisans and master tailors have begun preparing your pieces with the utmost attention to detail.
         </td>
       </tr>
 
@@ -755,7 +755,7 @@ export function renderCustomerOrderStatusUpdateEmail({
 
   if (newStatus === "shipped" || newStatus === "in_transit") {
     statusBannerColor = "#184244";
-    statusMessage = `Exciting news! Your Bansal-nx order #${safeId} has been dispatched from Jaipur.`;
+    statusMessage = `Exciting news! Your Bansal-nx order #${safeId} has been dispatched from Kolkata.`;
   } else if (newStatus === "out_for_delivery") {
     statusBannerColor = "#9b7038";
     statusMessage = `Your package is out for delivery with our courier and will arrive today!`;

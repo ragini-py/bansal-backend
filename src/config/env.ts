@@ -18,10 +18,11 @@ const schema = z.object({
   RAZORPAY_KEY_ID: z.string().default("rzp_test_dummy_key_id"),
   RAZORPAY_KEY_SECRET: z.string().default("dummy_razorpay_secret"),
   RAZORPAY_WEBHOOK_SECRET: z.string().default("dummy_razorpay_webhook_secret"),
-  SHIPROCKET_BASE_URL: z.string().default("https://apiv2.shiprocket.in"),
-  SHIPROCKET_EMAIL: z.string().default("demo@shiprocket.local"),
-  SHIPROCKET_PASSWORD: z.string().default("demo-shiprocket-password"),
-  SHIPROCKET_PICKUP_PINCODE: z.string().default("700001"),
+  // Third-party delivery integration disabled — Bansal NX ships orders directly from the Kolkata atelier
+  // SHIPROCKET_BASE_URL: z.string().default("https://apiv2.shiprocket.in"),
+  // SHIPROCKET_EMAIL: z.string().default("demo@shiprocket.local"),
+  // SHIPROCKET_PASSWORD: z.string().default("demo-shiprocket-password"),
+  // SHIPROCKET_PICKUP_PINCODE: z.string().default("700073"),
 
   // Transactional email — optional. Unset means emails are logged to the
   // console instead of sent (see utils/email.ts); set all of these to
@@ -77,12 +78,13 @@ export const env = {
     keySecret: parsed.data.RAZORPAY_KEY_SECRET,
     webhookSecret: parsed.data.RAZORPAY_WEBHOOK_SECRET,
   },
-  shiprocket: {
-    baseUrl: parsed.data.SHIPROCKET_BASE_URL,
-    email: parsed.data.SHIPROCKET_EMAIL,
-    password: parsed.data.SHIPROCKET_PASSWORD,
-    pickupPincode: parsed.data.SHIPROCKET_PICKUP_PINCODE,
-  },
+  // Third-party delivery integration disabled — self-shipping flow from Kolkata Atelier
+  // shiprocket: {
+  //   baseUrl: parsed.data.SHIPROCKET_BASE_URL,
+  //   email: parsed.data.SHIPROCKET_EMAIL,
+  //   password: parsed.data.SHIPROCKET_PASSWORD,
+  //   pickupPincode: parsed.data.SHIPROCKET_PICKUP_PINCODE,
+  // },
   google: {
     clientId: parsed.data.GOOGLE_CLIENT_ID?.trim() || "",
     clientSecret: parsed.data.GOOGLE_CLIENT_SECRET?.trim() || "",
