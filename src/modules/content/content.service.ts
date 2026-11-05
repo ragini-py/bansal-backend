@@ -24,15 +24,15 @@ const DEFAULT_CONTENT = {
     cta: "DISCOVER THE COLLECTION",
   },
   promo: {
-    heading: "INTRODUCING CHAMAK — BY BANSAL NX",
+    heading: "MAKE AN ENTRANCE",
     caption:
-      "A premium women's fashion brand celebrating Indian craftsmanship with a contemporary design approach for today's modern woman.",
-    cta: "EXPLORE CHAMAK",
+      "The Ceremony Edit — weighted silks, ceremonial colour, and master embroidery crafted for your moments.",
+    cta: "SHOP THE EDIT",
   },
   story: {
     heading: "Over 15 Years of Craftsmanship & Timeless Design",
     body:
-      "BANSAL NX has been redefining women's fashion for over 15 years with a commitment to quality, craftsmanship, and timeless design. As a manufacturer of premium ethnic and contemporary wear, we create collections that combine elegance, comfort, and evolving fashion trends. To extend our design philosophy to a wider audience, we introduced CHAMAK, a premium women's fashion brand that celebrates Indian craftsmanship with a contemporary design approach. Every CHAMAK collection is thoughtfully created to deliver exceptional quality, elegance, and style for today's modern woman.",
+      "BANSAL NX has been redefining women's fashion for over 15 years with a commitment to quality, craftsmanship, and timeless design. As a manufacturer of premium ethnic and contemporary wear in Kolkata, we create collections that combine elegance, comfort, and evolving fashion trends. Every collection is thoughtfully created to deliver exceptional quality, elegance, and style for today's modern woman.",
     cta: "ABOUT US",
   },
   sections: [
