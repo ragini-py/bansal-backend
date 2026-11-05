@@ -6,4 +6,6 @@ dist
 !/public/images/.gitkeep
 /optimized_images/
 /test_compressed.jpg
-
+.env
+.env.*
+!.env.example
