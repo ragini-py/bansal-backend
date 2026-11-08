@@ -7,3 +7,8 @@ dist
 /optimized_images/
 /test_compressed.jpg
 
+# Environment files
+.env
+.env.*
+!.env.example
+
